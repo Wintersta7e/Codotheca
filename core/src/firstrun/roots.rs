@@ -6,6 +6,7 @@ use std::sync::Mutex;
 
 use crate::index::path::PathPlatform;
 use crate::index::IndexError;
+use crate::projects::current::IS_CURRENT_SQL;
 use crate::protocol::{LocationKind, Root, RootAdd, RootProvenance, RootRefusal, RootState};
 use crate::scan::skiplist::SkipList;
 
@@ -178,7 +179,7 @@ fn already_a_root(
 /// Returns [`IndexError`] when the read fails.
 pub fn root_row(conn: &rusqlite::Connection, id: i64) -> Result<Option<Root>, IndexError> {
     let mut stmt = conn.prepare(
-        "SELECT id, kind, distro, enabled, descend_into_repos, added_by, added_at
+        "SELECT id, kind, distro, enabled, descend_into_repos, added_by, added_at, path_key
            FROM scan_root WHERE id = ?1",
     )?;
     let mut rows = stmt.query(rusqlite::params![id])?;
@@ -186,8 +187,15 @@ pub fn root_row(conn: &rusqlite::Connection, id: i64) -> Result<Option<Root>, In
         return Ok(None);
     };
     let kind: String = row.get(1)?;
+    let distro: String = row.get(2)?;
     let added_by: String = row.get(5)?;
     let enabled: i64 = row.get(3)?;
+    let path_key: Vec<u8> = row.get(7)?;
+    let reach = if enabled == 0 {
+        Reach::Uncounted
+    } else {
+        reach(conn, id, &kind, &distro, &path_key)?
+    };
     let root = Root {
         id: crate::protocol::RootId(row.get(0)?),
         path_display: String::new(),
@@ -196,7 +204,7 @@ pub fn root_row(conn: &rusqlite::Connection, id: i64) -> Result<Option<Root>, In
             "wsl" => LocationKind::Wsl,
             _ => LocationKind::Linux,
         },
-        distro: row.get(2)?,
+        distro,
         enabled: enabled != 0,
         descend_into_repos: row.get::<_, i64>(4)? != 0,
         provenance: if added_by == "user" {
@@ -204,15 +212,20 @@ pub fn root_row(conn: &rusqlite::Connection, id: i64) -> Result<Option<Root>, In
         } else {
             RootProvenance::Convention
         },
-        state: if enabled != 0 {
-            RootState::Watched
-        } else {
+        state: if enabled == 0 {
             RootState::Ignored
+        } else if reach == Reach::Offline {
+            RootState::Offline
+        } else {
+            RootState::Watched
         },
         added_at: row.get(6)?,
-        // §10.1b: `?` where a count exists but is not computed. Never `0`, and never a
-        // fabricated number before a walk has run.
-        project_count: None,
+        // §10.1b: `?` where a count exists but is not computed — an unscanned or offline root —
+        // never `0`, and never a fabricated number before a walk has run.
+        project_count: match reach {
+            Reach::Counted(n) => Some(n),
+            Reach::Uncounted | Reach::Offline => None,
+        },
     };
     drop(rows);
     drop(stmt);
@@ -231,6 +244,71 @@ pub fn root_row(conn: &rusqlite::Connection, id: i64) -> Result<Option<Root>, In
         path_display,
         ..root
     }))
+}
+
+/// What the index can say about one enabled root's projects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Reach {
+    /// The last completed walk covered the root, and this many projects sit under it.
+    Counted(u32),
+    /// No completed walk covered it, or nothing is indexed under it: a reachable empty root and
+    /// one the walk never reached leave the same rows, so neither is claimed as `0`.
+    Uncounted,
+    /// Every copy indexed under the root was classified `offline` (§4.6): its store was not
+    /// reachable on the last run that classified them.
+    Offline,
+}
+
+/// The count and reachability of one enabled root, from what the scan wrote.
+///
+/// The reachability fact is §4.6's `location.presence`, which a run sets to `offline` when the
+/// copy's store was not among the stores its roots reached — the root probe and the mount
+/// resolver's answer, persisted. The count is the live (not merged, not removed) projects with a
+/// present-day copy under the root, valid once the most recent completed, uncancelled run listed
+/// the root enabled in `scan_run.roots_json`.
+fn reach(
+    conn: &rusqlite::Connection,
+    id: i64,
+    kind: &str,
+    distro: &str,
+    root_key: &[u8],
+) -> Result<Reach, IndexError> {
+    let walked: bool = conn.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM json_each((SELECT roots_json FROM scan_run
+                                     WHERE ended_at IS NOT NULL AND cancelled = 0
+                                     ORDER BY id DESC LIMIT 1))
+            WHERE json_extract(value, '$.id') = ?1
+              AND json_extract(value, '$.enabled') = 1)",
+        rusqlite::params![id],
+        |r| r.get(0),
+    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT l.project_id, l.path_key, l.presence
+           FROM location l JOIN project p ON p.id = l.project_id
+          WHERE l.kind = ?1 AND l.distro = ?2 AND l.removed_at IS NULL
+            AND p.merged_into IS NULL AND {IS_CURRENT_SQL}"
+    ))?;
+    let mut projects = BTreeSet::new();
+    let mut all_offline = true;
+    let mut rows = stmt.query(rusqlite::params![kind, distro])?;
+    while let Some(row) = rows.next()? {
+        let key: Vec<u8> = row.get(1)?;
+        if !crate::paths::is_under(&key, root_key) {
+            continue;
+        }
+        projects.insert(row.get::<_, i64>(0)?);
+        all_offline &= row.get::<_, String>(2)? == "offline";
+    }
+    Ok(if projects.is_empty() {
+        Reach::Uncounted
+    } else if all_offline {
+        Reach::Offline
+    } else if walked {
+        Reach::Counted(u32::try_from(projects.len()).unwrap_or(u32::MAX))
+    } else {
+        Reach::Uncounted
+    })
 }
 
 /// Every scan root, oldest first — §11.3a's rows, and the caption's `M`.
@@ -504,6 +582,50 @@ mod tests {
         assert_eq!(rows[1].path_display, "/home/u/work");
         // §10.1b / §11.3a: uncomputed, never zero.
         assert!(rows.iter().all(|r| r.project_count.is_none()));
+    }
+
+    /// A completed run row naming `roots` (id, enabled), as `scan/run.rs` writes `roots_json`.
+    fn finished_run(conn: &rusqlite::Connection, roots: &str, cancelled: bool) {
+        conn.execute(
+            "INSERT INTO scan_run (generation, started_at, ended_at, mode, roots_json, cancelled)
+             VALUES (1, 1, 2, 'full', ?1, ?2)",
+            rusqlite::params![roots, i64::from(cancelled)],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_walked_root_counts_live_projects_under_it_and_only_while_enabled() {
+        let (_dir, index) = open();
+        let conn = index.conn();
+        let skip = SkipList::default();
+        let cache = SuggestionCache::new();
+        let root = add_root(conn, &params("/home/u/dev", false, &skip, &cache))
+            .unwrap()
+            .root
+            .unwrap();
+        seed_found_project(conn, "/home/u/dev/a");
+        seed_found_project(conn, "/home/u/dev/b");
+        seed_found_project(conn, "/home/u/devices/c");
+        // A merged-away project is the survivor's, not a second one under the root.
+        conn.execute("UPDATE project SET merged_into = 1 WHERE id = 2", [])
+            .unwrap();
+        let id = root.id.0;
+
+        finished_run(conn, &format!("[{{\"id\":{id},\"enabled\":true}}]"), false);
+        assert_eq!(root_row(conn, id).unwrap().unwrap().project_count, Some(1));
+
+        // A cancelled run is not a completed walk, so the last completed one still answers.
+        finished_run(conn, &format!("[{{\"id\":{id},\"enabled\":false}}]"), true);
+        assert_eq!(root_row(conn, id).unwrap().unwrap().project_count, Some(1));
+
+        // The last completed run had the root switched off: nothing under it was walked.
+        finished_run(conn, &format!("[{{\"id\":{id},\"enabled\":false}}]"), false);
+        assert_eq!(root_row(conn, id).unwrap().unwrap().project_count, None);
+
+        assert!(set_enabled(conn, id, false).unwrap());
+        let off = root_row(conn, id).unwrap().unwrap();
+        assert_eq!((off.state, off.project_count), (RootState::Ignored, None));
     }
 
     // §17: phase 1 has no destructive operation. Removing a root removes a scan_root row and

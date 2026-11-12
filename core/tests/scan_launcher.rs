@@ -479,3 +479,56 @@ fn walked_dirs_never_falls_and_carries_across_roots() {
         "the run's total is at least what progress last said"
     );
 }
+
+fn listed_roots(index: &Arc<Mutex<Index>>) -> Vec<codotheca_core::protocol::Root> {
+    let guard = index.lock().unwrap();
+    let roots = codotheca_core::firstrun::roots::list_roots(guard.conn()).unwrap();
+    drop(guard);
+    roots
+}
+
+/// §11.3a's per-root count and state, read through `roots.list`'s own reader after real runs.
+/// The count is the index's projects under the root once a completed walk covered it; a root
+/// whose every copy was unreachable on the last run reads `OFFLINE`, and its count `?` (§10.1b).
+/// A root with nothing under it cannot tell "reachable and empty" from "never reached", so it
+/// stays `?` rather than claiming `0`.
+#[test]
+fn a_walked_root_counts_its_projects_and_an_unreachable_one_reads_offline() {
+    let tree = tempfile::tempdir().unwrap();
+    let a = tree.path().join("a");
+    let names = ["p0", "p1", "p2"];
+    for name in names {
+        repo_at(&a, name);
+    }
+    let gone = tree.path().join("never-existed");
+    let r = rig_with(&[&a, &gone], distinct_git(&a, &names, 2), |launcher| {
+        launcher
+    });
+
+    let before = listed_roots(&r.index);
+    assert!(
+        before.iter().all(|root| root.project_count.is_none()),
+        "no walk has run, so no root has a count yet: {before:?}"
+    );
+
+    r.scans.start(ScanMode::Full, NOW).unwrap();
+    await_idle(&r.scans);
+    let after = listed_roots(&r.index);
+    assert_eq!(after[0].project_count, Some(3));
+    assert_eq!(after[0].state, codotheca_core::protocol::RootState::Watched);
+    assert_eq!(
+        after[1].project_count, None,
+        "an unreachable root with nothing indexed under it is not a counted zero"
+    );
+
+    // The first root's store goes away: its three copies are offline, and so is the root.
+    std::fs::rename(&a, tree.path().join("unplugged")).unwrap();
+    r.scans.start(ScanMode::Full, NOW).unwrap();
+    await_idle(&r.scans);
+    let offline = listed_roots(&r.index);
+    assert_eq!(
+        offline[0].state,
+        codotheca_core::protocol::RootState::Offline
+    );
+    assert_eq!(offline[0].project_count, None);
+}

@@ -22,6 +22,7 @@ import {
   LOCKFILE_NAMES,
 } from '../../shared/lockfileNames.js';
 import { EXCLUSION_LIST } from '../../shared/skipList.js';
+import { UNCOMPUTED_GLYPH } from '../firstrun/copy.js';
 import { verifyNote } from '../project/rail/OpensIn.js';
 import {
   SettingsGroup,
@@ -98,9 +99,12 @@ export function rootStateLabel(state: RootState): 'WATCHED' | 'IGNORED' | 'OFFLI
   return state === 'watched' ? 'WATCHED' : state === 'ignored' ? 'IGNORED' : 'OFFLINE';
 }
 
-/** `projectCount` is nullable on the wire, and an uncounted root prints no figure at all. */
-export function rootProjectCountText(count: number | null): string | null {
-  return count === null ? null : `${String(count)} PROJECTS`;
+/**
+ * §10.1b: `projectCount` is nullable on the wire — an unscanned or offline root — and an
+ * uncounted root reads `?` under PROJECTS, the first-run screen's glyph. Never `0`.
+ */
+export function rootProjectCountText(count: number | null): string {
+  return `${count === null ? UNCOMPUTED_GLYPH : String(count)} PROJECTS`;
 }
 
 export const SCAN_GROUP_ROWS: readonly SettingsRowSpec[] = [
@@ -200,9 +204,7 @@ export function ScanGroups(props: ScanGroupsProps): ReactElement {
               onChange={(next) => {
                 props.onSetEnabled(root.id, next);
               }}
-              {...(rootProjectCountText(root.projectCount) === null
-                ? {}
-                : { value: rootProjectCountText(root.projectCount) })}
+              value={rootProjectCountText(root.projectCount)}
             />
             <SwitchRow
               // Two roots would otherwise answer to one accessible name, and a voice command

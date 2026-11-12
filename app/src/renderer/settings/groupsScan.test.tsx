@@ -109,9 +109,13 @@ describe('group 1, SCAN ROOTS', () => {
     expect(onSetEnabled).toHaveBeenCalledWith(1, false);
   });
 
-  it('never prints an uncounted root as zero projects', () => {
-    render(<ScanGroups {...props} roots={[root({ projectCount: null })]} />);
+  // §10.1b: an unscanned or offline root reads `?` under PROJECTS. Never `0`, and never nothing:
+  // a row with no figure reads as a root that has no count to give.
+  it('prints an uncounted root as ? projects, never zero', () => {
+    render(<ScanGroups {...props} roots={[root({ projectCount: null, state: 'offline' })]} />);
     expect(screen.queryByText(/0 PROJECTS/)).toBeNull();
+    expect(screen.getByText('? PROJECTS')).toBeTruthy();
+    expect(screen.getByText(/OFFLINE/)).toBeTruthy();
     cleanup();
     render(<ScanGroups {...props} roots={[root({ projectCount: 12 })]} />);
     expect(screen.getByText(/12 PROJECTS/)).toBeTruthy();
