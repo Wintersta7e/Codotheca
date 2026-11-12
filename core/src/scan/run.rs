@@ -370,6 +370,7 @@ impl ScanRunner<'_> {
                         kind: ScanProblemKind::OfflineStore,
                         path_display: path_display(&path),
                         detail: "scan root not reachable this generation".to_owned(),
+                        path: None,
                     },
                     sink,
                 );
@@ -386,6 +387,7 @@ impl ScanRunner<'_> {
                         kind: ScanProblemKind::OfflineStore,
                         path_display: path_display(&path),
                         detail: format!("store identity unavailable: {err}"),
+                        path: None,
                     },
                     sink,
                 ),
@@ -465,6 +467,7 @@ impl ScanRunner<'_> {
                                 kind: ScanProblemKind::NonUtf8Path,
                                 path_display: discovered.path_display.clone(),
                                 detail: LOSSY_NAME.to_owned(),
+                                path: None,
                             },
                             sink,
                         );
@@ -481,7 +484,11 @@ impl ScanRunner<'_> {
                         found_repos: found_this_run.load(Ordering::Relaxed).max(resumed_from),
                     });
                 }
-                WalkEvent::Problem(problem) => self.report(scan_run_id, problem, sink),
+                // An untrusted repository's row keeps the root it was found under, so §11.1's
+                // TRUST can find the folder again (`scan::trust`).
+                WalkEvent::Problem(problem) => {
+                    self.report_under(scan_run_id, Some(entry.root.root_id), problem, sink);
+                }
                 // §4.5: the walk registers the bridge and refuses to traverse it; §13 crosses it
                 // over the protocol instead. Everything the distro reports comes back through
                 // this same sink, so an in-distro repository is indexed by the arm above.
@@ -545,6 +552,7 @@ impl ScanRunner<'_> {
                     detail: format!(
                         "{distro}: this build has no in-distro worker, so the bridge was not                          crossed"
                     ),
+                    path: None,
                 },
                 sink,
             );
@@ -559,6 +567,7 @@ impl ScanRunner<'_> {
                     kind: ScanProblemKind::UnreadableRepo,
                     path_display: path_display.to_owned(),
                     detail: format!("{distro}: not a bridge path this build understands"),
+                    path: None,
                 },
                 sink,
             );
@@ -599,6 +608,7 @@ impl ScanRunner<'_> {
                     kind: ScanProblemKind::UnreadableRepo,
                     path_display: path_display.to_owned(),
                     detail: format!("{distro}: {kind}"),
+                    path: None,
                 },
                 sink,
             );
@@ -653,12 +663,19 @@ impl ScanRunner<'_> {
                 } else {
                     format!("could not be indexed: {err}")
                 };
-                self.report(
+                let kind = problem_kind_for(&err);
+                // §11.1's TRUST re-finds an untrusted folder from its own row. An in-distro one is
+                // read by the distro's worker, which that command cannot drive, so it keeps none.
+                let path = (kind == ScanProblemKind::UntrustedRepo && discovered.distro.is_empty())
+                    .then(|| discovered.candidate.path.clone());
+                self.report_under(
                     scan_run_id,
+                    Some(discovered.root_id),
                     ScanProblem {
-                        kind: problem_kind_for(&err),
+                        kind,
                         path_display: discovered.path_display.clone(),
                         detail,
+                        path,
                     },
                     sink,
                 );
@@ -671,7 +688,19 @@ impl ScanRunner<'_> {
     /// table, not the event stream. A failed write is logged and never fatal: a problem row is a
     /// diagnostic, and losing one must not abort a scan that is otherwise succeeding.
     fn report(&self, scan_run_id: i64, problem: ScanProblem, sink: &WalkSink<'_>) {
-        if let Err(err) = self.store.record_problem(scan_run_id, &problem) {
+        self.report_under(scan_run_id, None, problem, sink);
+    }
+
+    /// [`Self::report`] for a problem found under a known root. The root is stored only beside a
+    /// row that carries its folder (`ScanProblem::path`); for every other row it is not written.
+    fn report_under(
+        &self,
+        scan_run_id: i64,
+        root_id: Option<i64>,
+        problem: ScanProblem,
+        sink: &WalkSink<'_>,
+    ) {
+        if let Err(err) = self.store.record_problem(scan_run_id, root_id, &problem) {
             eprintln!("scan: could not record problem: {err}");
         }
         sink(WalkEvent::Problem(problem));

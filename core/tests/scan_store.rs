@@ -197,10 +197,12 @@ fn every_problem_kind_the_core_emits_is_accepted_by_the_check_constraint() {
         h.store
             .record_problem(
                 run,
+                None,
                 &ScanProblem {
                     kind,
                     path_display: "/r/a".to_owned(),
                     detail: "why".to_owned(),
+                    path: None,
                 },
             )
             .unwrap_or_else(|e| panic!("kind {} rejected by the DDL: {e}", kind.as_str()));

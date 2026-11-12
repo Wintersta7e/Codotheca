@@ -179,6 +179,7 @@ fn read_gitmodules(parent: &Path, sink: &WalkSink<'_>) -> Option<Vec<Vec<u8>>> {
                 ".gitmodules is {} bytes; the cap is {GITMODULES_BYTE_CAP}",
                 meta.len()
             ),
+            path: None,
         }));
         return None;
     }

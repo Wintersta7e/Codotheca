@@ -334,7 +334,7 @@ test('the whole §2.4 table is present, plus §9 focus, roots.list, §20.8, §25
   // [p4] §40.10 raises it by two off this lane's base: `badges.list` and `badges.markLanded`.
   // [p4] §43.15 raises it by two more off its own base: `motivation.get` and
   // `motivation.acknowledge`.
-  assert.equal(names.length, 66, `expected 66 commands, found ${names.length}`);
+  assert.equal(names.length, 67, `expected 67 commands, found ${names.length}`);
   assert.equal(new Set(names).size, names.length);
 });
 
@@ -606,6 +606,8 @@ test('the non-idempotent set is closed', () => {
     'install.cancel',
     'install.start',
     'locations.uninstall',
+    // §11.1: a replayed `problems.trust` would answer a row the first call already answered.
+    'problems.trust',
     'projects.launch',
     // [p3] §31.6 adds the thirteenth: a replayed `projects.setCheckNa` after a core restart
     // would re-apply an N/A decision the user has since cleared, and `na = null` is a distinct
@@ -1154,10 +1156,11 @@ test('the four totals agree with the phase-2 delta table', () => {
   // them, and the sum is counted off the merged schema rather than taken from either side.
   // [p4] §40.10 raises it by two off this lane's base: `badges.list` and `badges.markLanded`.
   // [p4] §43.15 raises it by two: `motivation.get` and `motivation.acknowledge`.
+  // §11.1's `problems.trust` raises it by one: TRUST for a folder that has no location row.
   assert.equal(
     commands,
-    66,
-    `commands: 42 + 8 + 1 + 0 + 0 + 5 + 4 + §33's 1 + §31's 1 + §40's 2 + §43's 2 = 66, found ${commands}`,
+    67,
+    `commands: 42 + 8 + 1 + 0 + 0 + 5 + 4 + §33's 1 + §31's 1 + §40's 2 + §43's 2 + §11.1's 1 = 67, found ${commands}`,
   );
   // [p4] §43.15 raises it by one: `motivation`.
   assert.equal(
@@ -1269,11 +1272,14 @@ test('the four totals agree with the phase-2 delta table', () => {
    * [p4] §43.15 moves it by **+6**: `MotivationState`, `MotivationLine`, `MotivationLineForm`,
    * `MotivationReason`, `MotivationAck` and `XpTermTotal`. `XpTerm` is §38's and is not
    * declared twice.
+   *
+   * §11.1's `problems.trust` moves it by **+1**: `ScanProblemId`, the id `ProblemItem.problemId`
+   * carries to it.
    */
   assert.equal(
     types,
-    227,
-    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1 − §48.13's 2 + §46.15's 6 + §38.3a's 1 + §38.5's 3 + §39's 9 + §40's 5 + §43's 6; found ${types}`,
+    228,
+    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1 − §48.13's 2 + §46.15's 6 + §38.3a's 1 + §38.5's 3 + §39's 9 + §40's 5 + §43's 6 + §11.1's 1; found ${types}`,
   );
 });
 
@@ -1778,8 +1784,8 @@ test('§30: the health reading moves the type row alone', () => {
   // none, so it is raised to the merged figure rather than relaxed. The figure is absolute only
   // because this test's subject IS the totals.
   // [p4] §40.10's two `badges.*` commands are not §30's either, nor §43.15's two
-  // `motivation.*` commands, its topic or its two events.
-  assert.equal(schema.commands.length, 66);
+  // `motivation.*` commands, its topic or its two events, nor §11.1's `problems.trust`.
+  assert.equal(schema.commands.length, 67);
   assert.equal(Object.keys(schema.topics).length, 8);
   // [p3] §34.4's `projects/health_delta` raised the event row by ONE, and it is not §30's.
   assert.equal(

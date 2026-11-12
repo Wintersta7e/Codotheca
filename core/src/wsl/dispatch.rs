@@ -138,6 +138,7 @@ pub fn problem_for(distro: &str, reason: &Unavailable) -> ScanProblem {
         kind: ScanProblemKind::OfflineStore,
         path_display: bridge_path(distro, "/"),
         detail: detail.to_owned(),
+        path: None,
     }
 }
 
@@ -288,11 +289,11 @@ impl WslDispatcher {
                     // silently dropping it would make the summary claim a completeness the walk
                     // did not have.
                     dropped.store(true, Ordering::Relaxed);
-                    sink(WalkEvent::Problem(ScanProblem {
-                        kind: ScanProblemKind::UnreadableRepo,
-                        path_display: found.work_dir.clone(),
-                        detail: format!("unrecognised repository kind {:?}", found.kind),
-                    }));
+                    sink(WalkEvent::Problem(ScanProblem::new(
+                        ScanProblemKind::UnreadableRepo,
+                        found.work_dir.clone(),
+                        format!("unrecognised repository kind {:?}", found.kind),
+                    )));
                 }
             }
             WorkerEvent::Problem {
@@ -300,11 +301,11 @@ impl WslDispatcher {
                 path_display,
                 detail,
             } => {
-                sink(WalkEvent::Problem(ScanProblem {
-                    kind: problem_kind_of(&kind),
+                sink(WalkEvent::Problem(ScanProblem::new(
+                    problem_kind_of(&kind),
                     path_display,
                     detail,
-                }));
+                )));
             }
             WorkerEvent::Progress {
                 walked_dirs,
@@ -319,11 +320,11 @@ impl WslDispatcher {
                 mount_point,
                 fstype,
             } => {
-                sink(WalkEvent::Problem(ScanProblem {
-                    kind: ScanProblemKind::OfflineStore,
-                    path_display: mount_point,
-                    detail: format!("{fstype} is a Windows volume; the native scan covers it"),
-                }));
+                sink(WalkEvent::Problem(ScanProblem::new(
+                    ScanProblemKind::OfflineStore,
+                    mount_point,
+                    format!("{fstype} is a Windows volume; the native scan covers it"),
+                )));
             }
         });
 

@@ -32,6 +32,8 @@ export const COMMAND_EFFECT: Record<CommandName, CommandEffect> = {
   'scan.cancel': 'write',
   'scan.status': 'read',
   'problems.list': 'read',
+  // §11.1: indexes a folder and writes its trust; a replay would answer a row twice.
+  'problems.trust': 'write',
   'settings.get': 'read',
   'settings.set': 'write',
   'view.get': 'read',

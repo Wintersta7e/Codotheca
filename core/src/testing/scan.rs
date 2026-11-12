@@ -169,6 +169,7 @@ impl ScanStore for MemScanStore {
     fn record_problem(
         &self,
         scan_run_id: i64,
+        _root_id: Option<i64>,
         problem: &ScanProblem,
     ) -> Result<(), ScanStoreError> {
         self.inner

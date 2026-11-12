@@ -313,6 +313,10 @@ pub trait ScanStore: Send + Sync {
     ) -> Result<(), ScanStoreError>;
     /// Append one `scan_problem` row, with a count of one, to the given run.
     ///
+    /// `root_id` is the `scan_root` the problem was found under, stored with the folder's raw
+    /// bytes only when the problem carries a folder (`ScanProblem::path`); otherwise both stay
+    /// NULL.
+    ///
     /// # Errors
     ///
     /// When the insert fails — in production, a failed SQLite statement, including one the
@@ -320,6 +324,7 @@ pub trait ScanStore: Send + Sync {
     fn record_problem(
         &self,
         scan_run_id: i64,
+        root_id: Option<i64>,
         problem: &crate::scan::ScanProblem,
     ) -> Result<(), ScanStoreError>;
     /// The newest `scan_run` row, or `None` when no scan has ever run.

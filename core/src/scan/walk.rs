@@ -186,6 +186,7 @@ fn problem_from(err: &ignore::Error) -> Option<ScanProblem> {
         kind,
         path_display: path,
         detail: io.to_string(),
+        path: None,
     })
 }
 

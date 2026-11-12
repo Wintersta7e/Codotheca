@@ -17,6 +17,7 @@ function item(patch: Record<string, unknown> = {}): ProblemItem {
     lastSeenAt: null,
     candidateProjectIds: [],
     candidateNames: [],
+    problemId: null,
     ...patch,
   };
 }

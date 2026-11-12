@@ -71,6 +71,10 @@ pub enum HandoffError {
     /// Another thread panicked while holding the index mutex, so nothing was written.
     #[error("the index lock is poisoned")]
     Poisoned,
+    /// A trusted hand-off's `scan_problem` row was no longer there to answer — another call took
+    /// it first — so the whole transaction rolled back and nothing was written.
+    #[error("that problem has already been answered")]
+    ProblemGone,
 }
 
 /// Everything the hand-off needs that is not the index or the discovery itself.
@@ -113,12 +117,44 @@ pub fn hand_off_discovered(
     ctx: &HandoffCtx<'_>,
     discovered: &Discovered,
 ) -> Result<Indexed, HandoffError> {
+    hand_off(index, ctx, discovered, None)
+}
+
+/// §11.1's `TRUST THIS REPOSITORY`: the same hand-off for a folder the user has just trusted.
+///
+/// Every git read carries `RepoHandle::trusted`, so `base_args` adds `-c safe.directory=<path>`
+/// and nothing touches the user's git config (§17). The transaction that writes the row also
+/// stamps its `location.trusted_at` — still the one trust store — and deletes the `scan_problem`
+/// row `problem` names; a row already gone rolls the whole transaction back.
+///
+/// # Errors
+/// [`HandoffError`]; [`HandoffError::ProblemGone`] when `problem` was answered first.
+pub fn hand_off_trusted(
+    index: &Mutex<Index>,
+    ctx: &HandoffCtx<'_>,
+    discovered: &Discovered,
+    problem: i64,
+) -> Result<Indexed, HandoffError> {
+    hand_off(index, ctx, discovered, Some(problem))
+}
+
+fn hand_off(
+    index: &Mutex<Index>,
+    ctx: &HandoffCtx<'_>,
+    discovered: &Discovered,
+    trusting: Option<i64>,
+) -> Result<Indexed, HandoffError> {
     let kind = LocationKind::parse(&discovered.kind)
         .ok_or_else(|| HandoffError::UnknownKind(discovered.kind.clone()))?;
     let platform = platform_of(&discovered.kind);
     // Everything git, with **nothing locked**. A test asserts the mutex is free throughout.
+    // A trusted handle passes `establish_ownership` unprobed: the user has answered that question.
     let job = JobContext::new(JobClass::Background, ctx.cancel, Some(GIT_PROBE_TIMEOUT));
-    let repo = establish_ownership(ctx.git, repo_handle(discovered, ctx.store_class), &job)?;
+    let repo = establish_ownership(
+        ctx.git,
+        repo_handle(discovered, ctx.store_class, trusting.is_some()),
+        &job,
+    )?;
     let probe = probe_identity(ctx.git, &repo, platform, &job)?;
 
     // `common_dir_bytes` and the probe's `common_dir_key` are **one value**: `upsert_location`
@@ -156,6 +192,7 @@ pub fn hand_off_discovered(
     let now = ctx.now;
     let aliases = crate::provider::declared_host_aliases();
 
+    let mut problem_gone = false;
     let mut guard = index.lock().map_err(|_| HandoffError::Poisoned)?;
     let indexed = guard.with_tx(|tx| {
         // R1: the decision and the row it decides are **one** transaction. A committed decision
@@ -182,6 +219,14 @@ pub fn hand_off_discovered(
         let returning = reclaimed || stored.is_some_and(|before| before != Presence::Present);
         let location =
             upsert_location(tx, outcome.project_id, &input, now).map_err(as_index_error)?;
+        if let Some(problem) = trusting {
+            if !answer_untrusted(tx, location, problem, now)? {
+                problem_gone = true;
+                return Err(IndexError::Corrupt {
+                    detail: "the trusted problem row is gone".to_owned(),
+                });
+            }
+        }
         // §46.9's revival: a reclaimed row or a new one is the removed project's repository found
         // again. A copy that was only offline coming back is neither, and revives nothing.
         if reclaimed || stored.is_none() {
@@ -214,22 +259,48 @@ pub fn hand_off_discovered(
         })
     });
     drop(guard);
+    if problem_gone {
+        return Err(HandoffError::ProblemGone);
+    }
     Ok(indexed?)
+}
+
+/// Trust's two writes, in the hand-off's transaction: `location.trusted_at` on the row just
+/// written, and the `untrusted_repo` row it answers deleted. `false` when that row is gone.
+fn answer_untrusted(
+    tx: &rusqlite::Transaction<'_>,
+    location: i64,
+    problem: i64,
+    now: i64,
+) -> Result<bool, IndexError> {
+    let deleted = tx.execute(
+        "DELETE FROM scan_problem WHERE id = ?1 AND kind = 'untrusted_repo'",
+        [problem],
+    )?;
+    if deleted != 1 {
+        return Ok(false);
+    }
+    tx.execute(
+        "UPDATE location SET trusted_at = ?2 WHERE id = ?1",
+        rusqlite::params![location, now],
+    )?;
+    Ok(true)
 }
 
 /// The handle the probe runs against, built from what the walk already resolved.
 ///
 /// `RepoHandle::resolve` is deliberately not used: it re-reads `.git` and `commondir` from disk,
-/// and `classify` has already done that once for this candidate. `trusted` is false because
-/// `location.trusted_at` is a column of a row that does not exist yet.
+/// and `classify` has already done that once for this candidate. `trusted` is false for a scan,
+/// because `location.trusted_at` is a column of a row that does not exist yet, and true only for
+/// [`hand_off_trusted`], whose transaction writes that column.
 ///
 /// A WSL-spelled pointer is the exception that reads `.git` again, because the candidate does not
 /// record how it was selected; its ownership is established by the caller, never assumed.
-fn repo_handle(discovered: &Discovered, store_class: StoreClass) -> RepoHandle {
+fn repo_handle(discovered: &Discovered, store_class: StoreClass, trusted: bool) -> RepoHandle {
     let store = StoreKey::new(discovered.store_key.clone());
     let candidate = &discovered.candidate;
     if candidate.kind == RepoKind::Bare {
-        return RepoHandle::bare(&candidate.path, store, store_class);
+        return RepoHandle::bare(&candidate.path, store, store_class).with_trust(trusted);
     }
     RepoHandle {
         work_dir: candidate.path.clone(),
@@ -241,6 +312,7 @@ fn repo_handle(discovered: &Discovered, store_class: StoreClass) -> RepoHandle {
         git_dir_select: GitDirSelect::Discover,
     }
     .follow_wsl_pointer()
+    .with_trust(trusted)
 }
 
 /// `project.name` before anything has been derived: the directory's own name.

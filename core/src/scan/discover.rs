@@ -124,6 +124,7 @@ pub struct ProbeCtx<'a> {
     store: StoreKey,
     store_class: StoreClass,
     cancel: &'a CancelToken,
+    trusted: bool,
 }
 
 impl<'a> ProbeCtx<'a> {
@@ -140,7 +141,18 @@ impl<'a> ProbeCtx<'a> {
             store,
             store_class,
             cancel,
+            trusted: false,
         }
+    }
+
+    /// The same probe for a folder the user has trusted (§11.1's `TRUST THIS REPOSITORY`): every
+    /// git read it makes carries `RepoHandle::trusted`, so `base_args` adds
+    /// `-c safe.directory=<exact-path>` and a WSL-spelled pointer is selected explicitly. Only the
+    /// trust command builds one; a scan never does.
+    #[must_use]
+    pub const fn trusted(mut self) -> Self {
+        self.trusted = true;
+        self
     }
 
     /// The run's cancellation token, so the walk does not carry a second copy of it.
@@ -157,6 +169,12 @@ impl<'a> ProbeCtx<'a> {
     /// to its pointer rather than dropping the repository (criterion 5), and the hand-off reports
     /// it if it then cannot be indexed; a bare-shaped directory is reported here.
     fn facts(&self, repo: &RepoHandle) -> Option<RepoFacts> {
+        if self.trusted {
+            return self
+                .git
+                .repo_facts(&repo.clone().with_trust(true), &self.job())
+                .ok();
+        }
         self.git.repo_facts(repo, &self.job()).ok()
     }
 
@@ -298,6 +316,7 @@ fn problem(sink: &WalkSink<'_>, dir: &Path, detail: String) {
         kind: ScanProblemKind::UnreadableRepo,
         path_display: path_display(dir),
         detail,
+        path: None,
     }));
 }
 

@@ -52,6 +52,11 @@ pub enum Route {
     Surfaces,
     /// `crate::scan::dispatch_scan_command` — plan 07.
     Scan,
+    /// `crate::scan::trust::handle_trust` — §11.1's `problems.trust`, answered **without** the
+    /// index guard held across the hand-off. Same carve-out as [`Route::Scan`], for the same
+    /// reason: it re-discovers one folder and runs the scan's own hand-off, whose git reads run
+    /// unlocked and whose transaction takes the one non-reentrant mutex itself.
+    ProblemTrust,
     /// `crate::identity::commands::dispatch_identity_command` — plan 08.
     Identity,
     /// `crate::projects::dispatch_projects_command` — plan 13.
@@ -188,6 +193,9 @@ pub const fn route(command: CommandName) -> Route {
         | CommandName::DiagBundle => Route::Surfaces,
 
         CommandName::ScanStart | CommandName::ScanCancel | CommandName::ScanStatus => Route::Scan,
+
+        // §11.1's TRUST for a folder that has no location row: the scan's hand-off, off the lock.
+        CommandName::ProblemsTrust => Route::ProblemTrust,
 
         CommandName::ProjectsMerge | CommandName::ProjectsUnmergeHint => Route::Identity,
 
@@ -342,14 +350,16 @@ mod tests {
         // running total a lane cannot know after the merges ahead of it.
         // [p4] §40.10 raises it by two: badges.list and badges.markLanded.
         // [p4] §43.15 raises it by two: motivation.get and motivation.acknowledge.
+        // §11.1 raises it by one: problems.trust, TRUST for a folder with no location row.
         assert_eq!(
             commands.len(),
-            66,
+            67,
             "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight plus §25.8's \
              remote.webUrl plus §25.8's three projects.readme* commands plus §24.9's three \
              install.* commands plus §21.13's sync.status plus §24.7's two locations.uninstall* \
              commands plus §33.8's health.weathering plus §31.6's projects.setCheckNa plus \
-             §40.10's two badges.* commands plus §43.15's two motivation.* commands"
+             §40.10's two badges.* commands plus §43.15's two motivation.* commands plus \
+             §11.1's problems.trust"
         );
         let unnamed: Vec<&str> = commands
             .iter()

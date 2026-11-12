@@ -508,6 +508,18 @@ impl CoreHandler {
             Route::Scan => Ok(self
                 .scan_arm(command, args, now)
                 .unwrap_or_else(|| Err(Self::declined(command, dest)))),
+            // §11.1's TRUST runs the scan's hand-off, which takes the one mutex for its own
+            // transaction after its git reads; holding it here would deadlock.
+            Route::ProblemTrust => Ok(crate::scan::trust::handle_trust(
+                &crate::scan::trust::TrustCtx {
+                    index: &self.index,
+                    git: self.git.as_ref(),
+                    mounts: self.mount.as_ref(),
+                    jobs: self.jobs.sink_ref(),
+                    now,
+                },
+                args,
+            )),
             Route::Install => Ok(match command_name(command) {
                 // Infallible in practice: `dest` above came from this same name. Matched rather
                 // than unwrapped so a future route change cannot turn it into a panic.
@@ -953,6 +965,7 @@ impl CommandHandler for CoreHandler {
             Route::Loop
             | Route::NoOwner(_)
             | Route::Scan
+            | Route::ProblemTrust
             | Route::Install
             | Route::Uninstall
             | Route::AccountsNet

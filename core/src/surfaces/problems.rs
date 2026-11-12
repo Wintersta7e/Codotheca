@@ -6,7 +6,7 @@ use crate::index::IndexError;
 use crate::proto::dispatch::{parse_args, CommandFailure}; // R15: one helper, plan 03's
 use crate::protocol::{
     LocationId, ProblemGroup, ProblemHeader, ProblemItem, ProblemKind, Problems, ProblemsListArgs,
-    ProjectId, ScanRunId,
+    ProjectId, ScanProblemId, ScanRunId,
 };
 use crate::surfaces::{display_map, SurfaceCtx};
 
@@ -158,6 +158,8 @@ struct StoredProblem {
     detail: Option<String>,
     count: u32,
     kind: String,
+    /// The row keeps its folder's bytes and its root, so `problems.trust` can find it again.
+    retraceable: bool,
 }
 
 fn scan_problems(
@@ -166,7 +168,8 @@ fn scan_problems(
     kind: ProblemKind,
 ) -> Result<Vec<ProblemItem>, IndexError> {
     let mut stmt = conn.prepare(
-        "SELECT id, detail, count, kind FROM scan_problem WHERE scan_run_id = ?1 ORDER BY id",
+        "SELECT id, detail, count, kind, path_bytes IS NOT NULL AND root_id IS NOT NULL
+           FROM scan_problem WHERE scan_run_id = ?1 ORDER BY id",
     )?;
     let rows = stmt
         .query_map([run.0], |r| {
@@ -175,6 +178,7 @@ fn scan_problems(
                 detail: r.get(1)?,
                 count: r.get(2)?,
                 kind: r.get(3)?,
+                retraceable: r.get(4)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -199,6 +203,10 @@ fn scan_problems(
             last_seen_at: None,
             candidate_project_ids: Vec::new(),
             candidate_names: Vec::new(),
+            // §11.1's TRUST is drawn from this, so it is set only where `problems.trust` can
+            // act: an untrusted row that kept its folder and whose root still exists.
+            problem_id: (kind == ProblemKind::UntrustedRepo && row.retraceable)
+                .then_some(ScanProblemId(row.id)),
         })
         .collect())
 }
@@ -252,6 +260,7 @@ fn deferred_slow(conn: &rusqlite::Connection) -> Result<Vec<ProblemItem>, IndexE
             last_seen_at: row.last_seen_at,
             candidate_project_ids: Vec::new(),
             candidate_names: Vec::new(),
+            problem_id: None,
         })
         .collect())
 }
@@ -329,6 +338,7 @@ fn ambiguous(conn: &rusqlite::Connection) -> Result<Vec<ProblemItem>, IndexError
                 .map(|(_, n)| n.clone())
                 .collect(),
             candidate_project_ids: rows.into_iter().map(|(id, _)| id).collect(),
+            problem_id: None,
         });
     }
     Ok(out)
@@ -372,6 +382,7 @@ pub fn abandoned_installs(conn: &rusqlite::Connection) -> Result<Vec<ProblemItem
             last_seen_at: None,
             candidate_project_ids: Vec::new(),
             candidate_names: Vec::new(),
+            problem_id: None,
         });
     }
     Ok(items)

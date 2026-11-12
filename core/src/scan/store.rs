@@ -207,17 +207,25 @@ impl ScanStore for SqliteScanStore {
     fn record_problem(
         &self,
         scan_run_id: i64,
+        root_id: Option<i64>,
         problem: &ScanProblem,
     ) -> Result<(), ScanStoreError> {
+        // The raw bytes in `location.path_bytes`' encoding, and the root beside them; both NULL
+        // for a row that carries no folder.
+        let path_bytes = problem.path.as_deref().map(crate::paths::path_bytes);
+        let root_id = path_bytes.as_ref().and(root_id);
         self.with_conn(|conn| {
             conn.execute(
-                "INSERT INTO scan_problem (scan_run_id, kind, path_display, detail, count)
-                 VALUES (?1, ?2, ?3, ?4, 1)",
+                "INSERT INTO scan_problem
+                   (scan_run_id, kind, path_display, detail, count, path_bytes, root_id)
+                 VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6)",
                 rusqlite::params![
                     scan_run_id,
                     problem.kind.as_str(),
                     problem.path_display,
-                    problem.detail
+                    problem.detail,
+                    path_bytes,
+                    root_id
                 ],
             )?;
             Ok(())

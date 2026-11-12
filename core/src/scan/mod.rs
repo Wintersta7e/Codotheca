@@ -11,6 +11,7 @@ pub mod run;
 pub mod skiplist;
 pub mod store;
 pub mod submodules;
+pub mod trust;
 pub mod walk;
 pub mod wsl;
 
@@ -73,6 +74,24 @@ pub struct ScanProblem {
     pub path_display: String,
     /// Diagnostic text for the log and the row; the shell owns the prose the user sees.
     pub detail: String,
+    /// The folder itself, set only where the core may act on the row again: §11.1's `TRUST THIS
+    /// REPOSITORY` re-finds an untrusted repository from the raw bytes stored beside the row,
+    /// never from `path_display` (§1.10). `None` for every other row.
+    pub path: Option<std::path::PathBuf>,
+}
+
+impl ScanProblem {
+    /// A row that carries no folder: every kind but an untrusted repository the walk can find
+    /// again.
+    #[must_use]
+    pub const fn new(kind: ScanProblemKind, path_display: String, detail: String) -> Self {
+        Self {
+            kind,
+            path_display,
+            detail,
+            path: None,
+        }
+    }
 }
 
 /// Everything the walk emits. Variants are added by later tasks in this plan; match with a

@@ -128,6 +128,8 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   'scan.start',
   'scan.cancel',
   'scan.status',
+  // scan::trust::handle_trust
+  'problems.trust',
   // identity::commands::dispatch_identity_command
   'projects.merge',
   'projects.unmergeHint',

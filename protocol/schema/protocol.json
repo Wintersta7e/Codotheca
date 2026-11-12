@@ -27,6 +27,7 @@
     "TargetId": { "kind": "id", "repr": "i64" },
     "SessionId": { "kind": "id", "repr": "i64" },
     "ScanRunId": { "kind": "id", "repr": "i64" },
+    "ScanProblemId": { "kind": "id", "repr": "i64" },
     "Empty": { "kind": "struct", "fields": {} },
     "LocationRef": {
       "kind": "struct",
@@ -148,8 +149,10 @@
         "locationId": "LocationId?",
         "lastSeenAt": "Timestamp?",
         "candidateProjectIds": "[ProjectId]",
-        "candidateNames": "[String]"
-      }
+        "candidateNames": "[String]",
+        "problemId": "ScanProblemId?"
+      },
+      "$comment": "problemId is set only on an untrusted_repo row the core can find again (its folder's bytes and its root are stored beside it); §11.1's TRUST THIS REPOSITORY is drawn from it and sends it to problems.trust"
     },
     "ProblemGroup": {
       "kind": "struct",
@@ -1865,6 +1868,13 @@
     { "name": "scan.cancel", "args": { "id": "ScanRunId" }, "returns": "Empty" },
     { "name": "scan.status", "args": {}, "returns": "ScanStatus" },
     { "name": "problems.list", "args": { "run": "ScanRunId?" }, "returns": "Problems" },
+    {
+      "name": "problems.trust",
+      "args": { "problemId": "ScanProblemId" },
+      "returns": "LocationId",
+      "idempotent": false,
+      "$comment": "§11.1/§3.2: TRUST THIS REPOSITORY for a folder git refused during a scan, which has no location row for locations.setTrusted to name. The core reads the folder from its own scan_problem row (no path crosses the wire), re-discovers and indexes it with -c safe.directory, and in one transaction writes location.trusted_at and deletes the row. Never the user's git config. Refused for any other kind, a row with no stored folder, a removed root, or a row already answered"
+    },
     { "name": "settings.get", "args": {}, "returns": "Settings" },
     { "name": "settings.set", "args": { "patch": "SettingsPatch" }, "returns": "Settings" },
     { "name": "view.get", "args": {}, "returns": "ViewState" },
