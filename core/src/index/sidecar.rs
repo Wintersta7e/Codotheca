@@ -774,6 +774,10 @@ pub const CLASSIFIED: &[(Entry, Classification)] = &[
     (Entry::Column("location", "behind"), BY_REFSTATE),
     (Entry::Column("location", "stash_count"), BY_REFSTATE),
     (Entry::Column("location", "tag_count"), BY_REFSTATE),
+    // §55.4.2: J4 picks the newest tag from the list it reads for release days, under the basis
+    // it read it at; another history walk writes both again.
+    (Entry::Column("location", "latest_tag_name"), BY_HISTORY),
+    (Entry::Column("location", "latest_tag_basis"), BY_HISTORY),
     (Entry::Column("location", "interrupted_op"), BY_REFSTATE),
     (Entry::Column("location", "head_oid"), BY_REFSTATE),
     (

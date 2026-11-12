@@ -209,6 +209,25 @@ fn ac_p4_48_15_every_table_and_column_is_classified() {
     assert_ne!(report.columns, 0, "the gate saw no column");
 }
 
+/// AC-P4-55-12: J4 writes the newest tag and its basis, so both columns are derivable by the
+/// history walk — the classification `project.first_commit_at` carries, never carried in the sidecar.
+#[test]
+fn ac_p4_55_12_the_tag_columns_are_derivable_by_history() {
+    let class_of = |entry: Entry| {
+        CLASSIFIED
+            .iter()
+            .find(|(e, _)| *e == entry)
+            .map(|(_, class)| *class)
+    };
+    let history = class_of(Entry::Column("project", "first_commit_at")).unwrap();
+    assert!(matches!(history, Classification::Derivable { .. }));
+    for column in ["latest_tag_name", "latest_tag_basis"] {
+        let class = class_of(Entry::Column("location", column));
+        eprintln!("location.{column}: {class:?}");
+        assert_eq!(class, Some(history), "location.{column}");
+    }
+}
+
 /// A table that lands without a classification fails the gate, by name.
 #[test]
 fn an_unclassified_scratch_table_fails_the_gate() {

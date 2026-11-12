@@ -202,13 +202,21 @@ pub const MIGRATIONS: &[Migration] = &[
         // §8.4: one nullable column added and back-filled; nothing is copied or rebuilt.
         rebuilds_a_table: false,
     },
+    Migration {
+        version: 25,
+        name: "repo_shields",
+        sql: include_str!("../../migrations/0025_repo_shields.sql"),
+        // §55.5: four nullable `ADD COLUMN`s on `project_content_scan` and `location`; nothing
+        // is copied or rebuilt.
+        rebuilds_a_table: false,
+    },
 ];
 
 /// The latest schema version this build understands.
 ///
 /// This stays a literal for the Rust 1.80 minimum version. The integration test keeps it in
 /// sync with the last entry in [`MIGRATIONS`].
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 24;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 25;
 
 /// The version `PRAGMA user_version` holds; a value that does not fit a `u32` reads as `0`.
 ///
