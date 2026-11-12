@@ -209,6 +209,28 @@ describe('the focus-ring gate', () => {
     expect(result.out).toContain('check-focus-ring: ok');
     expect(result.code).toBe(0);
   });
+
+  it('accepts a control whose outline its field answers for under :focus-within', () => {
+    // A composite field draws one indicator for the input inside it. The removal names the field
+    // it defers to, and that field's own `:focus-within` rule has to draw something.
+    const result = gateOver(
+      focusGate,
+      '.cdt-probe:focus-within {\n  border-color: var(--sig);\n}\n' +
+        '.cdt-probe:focus-within .cdt-probe-input {\n  outline: none;\n}\n',
+    );
+    expect(result.out).toContain('check-focus-ring: ok');
+    expect(result.code).toBe(0);
+  });
+
+  it('rejects that deferral when the field draws nothing under :focus-within', () => {
+    const result = gateOver(
+      focusGate,
+      '.cdt-probe:focus-within {\n  color: var(--sig);\n}\n' +
+        '.cdt-probe:focus-within .cdt-probe-input {\n  outline: none;\n}\n',
+    );
+    expect(result.code).toBe(1);
+    expect(result.out).toContain('outline removed with no inset box-shadow ring in the same rule');
+  });
 });
 
 describe('the three gates are wired into npm run lint', () => {

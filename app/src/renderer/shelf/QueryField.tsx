@@ -163,7 +163,8 @@ export function QueryFieldView(props: QueryFieldProps): ReactElement {
         type="search"
         className="cdt-shelf-field-input"
         value={model.draft}
-        placeholder={QUERY_PLACEHOLDER}
+        // §8.3a: no term reads twice, and the example query beside a real pill reads as a second.
+        placeholder={model.pills.length === 0 ? QUERY_PLACEHOLDER : undefined}
         onChange={(event) => {
           props.onQueryChange(joinQuery(model.committed, event.currentTarget.value));
         }}

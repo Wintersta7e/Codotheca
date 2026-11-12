@@ -1,12 +1,13 @@
 import type { RenderResult } from '@testing-library/react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { pillsOf } from '../../shared/query/format.js';
 import { parseQuery } from '../../shared/query/parse.js';
 import source from './QueryField.tsx?raw';
 import type { QueryFieldModel } from './QueryField.js';
 import { QUERY_PLACEHOLDER, QueryFieldView, dropPill, fieldModel } from './QueryField.js';
 import { required } from '../../shared/required.js';
+import shelfCss from './shelf.css?raw';
 
 afterEach(cleanup);
 
@@ -127,6 +128,13 @@ describe('QueryFieldView', () => {
     expect(QUERY_PLACEHOLDER).toBe('lang:rust is:dirty touched:>6mo');
   });
 
+  it('drops the placeholder once a term is a pill, so no term reads twice', () => {
+    const { container } = view('lang:rust ');
+    expect(container.querySelectorAll('.cdt-shelf-pill')).toHaveLength(1);
+    const input = required(container.querySelector('input'), 'input');
+    expect(input.hasAttribute('placeholder')).toBe(false);
+  });
+
   it('renders the three pill states with a redundant coding each', () => {
     const { container } = view('is:dirty -is:archived nosuch:value ');
     const states = [...container.querySelectorAll('.cdt-shelf-pill')].map((el) =>
@@ -177,5 +185,42 @@ describe('QueryFieldView', () => {
     const { container } = view('is:dirty nosuch:value ');
     expect(container.innerHTML).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(container.innerHTML).not.toMatch(/FORGET/i);
+  });
+});
+
+// Criterion 53: one focus indicator. The field's border answers for the input inside it, so the
+// input's own outline is a second ring — read here as the browser resolves it under shelf.css.
+describe('the query field under focus', () => {
+  const style = document.createElement('style');
+  beforeAll(() => {
+    expect(shelfCss.length, 'shelf.css?raw imported as an empty string').toBeGreaterThan(0);
+    style.textContent = shelfCss;
+    document.head.append(style);
+  });
+  afterAll(() => {
+    style.remove();
+  });
+
+  it('draws the field border and no outline of the input', () => {
+    const { container } = render(
+      <QueryFieldView text="" ast={parseQuery('')} model={model('')} onQueryChange={vi.fn()} />,
+    );
+    const field = required(container.querySelector<HTMLElement>('.cdt-shelf-field'), 'field');
+    const input = required(container.querySelector('input'), 'input');
+    // jsdom reads a `var()` border back as `currentColor`, so the field's indicator is read as
+    // the rules that select the real element and the colour they draw, not as a computed colour.
+    // Read only after focus: jsdom keeps a `:focus-within` match it made before focus moved.
+    // jsdom has no user-agent focus ring either, so the input's outline is read the same way.
+    const drawn = (element: Element, property: string): string[] =>
+      [...required(style.sheet, 'sheet').cssRules]
+        .filter((rule): rule is CSSStyleRule => 'selectorText' in rule)
+        .filter((rule) => element.matches(rule.selectorText))
+        .map((rule) => rule.style.getPropertyValue(property))
+        .filter((value) => value !== '');
+    input.focus();
+    expect(document.activeElement).toBe(input);
+    expect(drawn(field, 'border-color')).toContain('var(--sig)');
+    // The shorthand: jsdom does not expand `outline` into its longhands.
+    expect(drawn(input, 'outline')).toEqual(['none']);
   });
 });

@@ -217,6 +217,12 @@
   border: 0;
 }
 
+/* Criterion 53: one indicator. The field's border answers for the input inside it, so the
+   input's own focus ring would be a second one. */
+.cdt-shelf-field:focus-within .cdt-shelf-field-input {
+  outline: none;
+}
+
 .cdt-shelf-field-input::placeholder {
   color: var(--text-3);
 }
