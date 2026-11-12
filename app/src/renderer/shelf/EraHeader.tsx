@@ -5,6 +5,9 @@ import type { ShelfSection } from './page.js';
 
 export type OverflowProbe = (el: HTMLElement) => boolean;
 
+/** The design's `▾`/`▸`: open points down, collapsed points at the label. */
+export const ERA_CHEVRON = { expanded: '▾', collapsed: '▸' } as const;
+
 /** Injected so the truncation rule is testable without a layout engine. */
 export const measuresOverflow: OverflowProbe = (el) => el.scrollWidth > el.clientWidth;
 
@@ -51,6 +54,11 @@ export function EraHeader(props: EraHeaderProps): ReactElement {
         aria-label={eraChevronName(`${section.label} · ${full}`)}
         onClick={onToggle}
       >
+        {/* §8.1's chevron glyph. Hidden from the accessible name, which `aria-expanded` already
+            carries; the glyph is the sighted half of the same state. */}
+        <span className="cdt-era-chev" aria-hidden="true">
+          {collapsed ? ERA_CHEVRON.collapsed : ERA_CHEVRON.expanded}
+        </span>
         <span className="cdt-era-label">{section.label}</span>
         {/* The only element that ellipsises. Ellipsis cuts from the end, where §8.1's coverage
             parenthetical sits, and `41 GB tracked (of 198 ind…` reads as a complete figure — so

@@ -405,40 +405,71 @@
 }
 
 /* The label, summary and flags are the button's children, not the header's, so the header's gap
-   never reached them and `LIVE` ran into `4 projects`. The button lays them out itself. */
+   never reached them and `LIVE` ran into `4 projects`. The button lays them out itself, and spans
+   the header so §8.1's flags can sit at its right edge as the design draws them. */
 .cdt-era-chevron {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  flex: 1;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 0;
   color: var(--text-3);
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.04em;
+  text-align: left;
   cursor: pointer;
   background: none;
   border: 0;
 }
 
+/* The glyph, `▾` open and `▸` collapsed, at the design's 9px slot so the label never shifts. */
+.cdt-era-chev {
+  flex: none;
+  width: 9px;
+  color: var(--text-3);
+  transition: color 0.14s cubic-bezier(0.2, 0.85, 0.2, 1);
+}
+
+.cdt-era-chevron:hover .cdt-era-chev {
+  color: var(--sig);
+}
+
 .cdt-era-label {
+  flex: none;
   color: var(--text-1);
   font-family: var(--font-display);
-  font-size: 19px;
+  font-size: 15px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
 }
 
+/* §8.7's correction table: mono 9px `.1em` at `--text-3`. The one element that may shrink, so
+   `measuresOverflow` has a box narrower than its text to measure. */
 .cdt-era-summary {
+  min-width: 0;
+  overflow: hidden;
   color: var(--text-3);
   font-family: var(--font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.06em;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
+/* §8.1: flags in `--sig`, pushed to the right edge, never shrunk. Tracked as the summary is,
+   because criterion 60 tracks every mono size; the design draws them untracked. */
 .cdt-era-flags {
-  color: var(--text-3);
+  flex: none;
+  margin-left: auto;
+  padding-left: 6px;
+  color: var(--sig);
   font-family: var(--font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.06em;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
 }
 
 .cdt-reference-tail {
@@ -482,53 +513,80 @@
 .cdt-attention-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  align-items: stretch;
+  gap: 8px;
   padding: 20px 22px 0;
 }
 
 /* `--cdt-chip-accent` is set inline per chip from the accent its section states. Until this
- * rule existed the property was written by the component and read by nothing. */
+ * rule existed the property was written by the component and read by nothing.
+ * Section 8.0b's box: a row — the number, then the label stacked over its sub-line — outlined in
+ * `--line-2` and striped 3px in the accent. */
 .cdt-attention-chip {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 9px 12px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 15px 11px;
+  text-align: left;
   cursor: pointer;
-  background: var(--surface-2);
-  border: 1px solid var(--line-2);
-  box-shadow: inset 3px 0 0 0 var(--cdt-chip-accent);
-  transition: border-color 0.16s cubic-bezier(0.2, 0.85, 0.2, 1);
+  background-color: var(--surface-2);
+  border: 0;
+  box-shadow:
+    inset 0 0 0 1px var(--line-2),
+    inset 3px 0 0 0 var(--cdt-chip-accent);
+  transition:
+    background-color 0.14s cubic-bezier(0.2, 0.85, 0.2, 1),
+    box-shadow 0.14s cubic-bezier(0.2, 0.85, 0.2, 1),
+    transform 0.14s cubic-bezier(0.2, 0.85, 0.2, 1);
+}
+
+/* Hover takes `--surface-4`, moves the outline to the accent and lifts 1px (section 8.0b). */
+.cdt-attention-chip:hover {
+  background-color: var(--surface-4);
+  box-shadow:
+    inset 0 0 0 1px var(--cdt-chip-accent),
+    inset 3px 0 0 0 var(--cdt-chip-accent);
+  transform: translateY(-1px);
 }
 
 /* A saved query whose grammar has moved on. Outline only: the ground and the type are unchanged,
    because the chip still counts and is still activatable — what is broken is the query behind it,
    not the control. AttentionRow applies this class and shelf.css did not declare it, so the state
-   selected nothing and rendered identically to a healthy chip. */
-.cdt-attention-chip--broken {
+   selected nothing and rendered identically to a healthy chip. Hover keeps the broken outline. */
+.cdt-attention-chip--broken,
+.cdt-attention-chip--broken:hover {
   box-shadow: inset 0 0 0 1px var(--fail-hot);
 }
 
-.cdt-attention-chip:hover {
-  background: var(--surface-4);
-  border-color: var(--sig);
+/* Section 11.6: no transform below `full`, and no transition at `off`. */
+[data-effects-tier='reduced'] .cdt-attention-chip:hover,
+[data-effects-tier='off'] .cdt-attention-chip:hover {
+  transform: none;
+}
+
+[data-effects-tier='off'] .cdt-attention-chip {
+  transition: none;
 }
 
 .cdt-attention-count {
-  color: var(--text-0);
+  flex: none;
+  color: var(--cdt-chip-accent);
   font-family: var(--font-display);
-  font-size: 26px;
+  font-size: 27px;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  line-height: 0.86;
 }
 
 /* Section 8.0b stacks the sub-line under its label. Both are spans, so without `block` they sat
    on one line with nothing between them and read `ALLTHE WHOLE LIBRARY`. */
 .cdt-attention-label {
   display: block;
-  color: var(--text-2);
-  font-family: var(--font-mono);
-  font-size: 8.5px;
-  letter-spacing: 0.14em;
+  color: var(--text-1);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  white-space: nowrap;
 }
 
 .cdt-attention-sub {
@@ -536,8 +594,8 @@
   margin-top: 3px;
   color: var(--text-3);
   font-family: var(--font-mono);
-  font-size: 8px;
-  letter-spacing: 0.1em;
+  font-size: 7.5px;
+  letter-spacing: 0.12em;
 }
 
 .cdt-attention-chip:hover .cdt-attention-sub {
