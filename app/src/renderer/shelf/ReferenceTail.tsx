@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactElement } from 'react';
 import type { ProjectId } from '../../generated/protocol.js';
 import { conditionDotName } from '../a11y/names.js';
-import { conditionDot } from '../derive/condition.js';
+import { DOT_SIZE_PX, conditionDot } from '../derive/condition.js';
 import { formatTrackedBytes } from '../format/size.js';
 import type { ShelfRow } from './row.js';
 
@@ -55,6 +55,9 @@ export function ReferenceTail({ rows, onOpen }: ReferenceTailProps): ReactElemen
                 aria-hidden={dotName === null ? true : undefined}
                 style={
                   {
+                    // §5.4a names no reference-tail size; these are list rows, so the list's.
+                    width: `${String(DOT_SIZE_PX.listRow)}px`,
+                    height: `${String(DOT_SIZE_PX.listRow)}px`,
                     '--cdt-dot-fill': dot.fill ?? 'transparent',
                     '--cdt-dot-ring': dot.ring ?? 'none',
                   } as CSSProperties

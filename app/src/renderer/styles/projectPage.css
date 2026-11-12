@@ -1281,12 +1281,7 @@
   color: var(--text-3);
 }
 
-.cp-condition-dot {
-  display: inline-block;
-  border-radius: 50%;
-  background-color: var(--cdt-dot-fill);
-  border: var(--cdt-dot-ring);
-}
+/* `.cp-condition-dot` is declared in base.css, shared with the shelf list's dot. */
 
 .cp-condition-divergence {
   letter-spacing: 0.08em;

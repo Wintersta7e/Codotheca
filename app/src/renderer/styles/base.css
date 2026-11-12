@@ -65,6 +65,21 @@ body {
 }
 
 /*
+ * §5.4a's dot where the caller hands its band in as two custom properties: the shelf list's
+ * leading slot, the reference tail and the CONDITION panel's line. One rule for all three — the
+ * list's class had none, so its dot drew nothing. The size comes inline from `DOT_SIZE_PX`.
+ */
+.cdt-condition-dot,
+.cp-condition-dot {
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+  border-radius: 50%;
+  background-color: var(--cdt-dot-fill);
+  border: var(--cdt-dot-ring);
+}
+
+/*
  * R35(b) — the three shared entry keyframes, declared once, here.
  *
  * They belong to the design system rather than to any screen because §11.6's tier clamp lives in

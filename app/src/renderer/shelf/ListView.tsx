@@ -2,7 +2,7 @@ import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import type { ProjectId } from '../../generated/protocol.js';
 import { conditionDotName } from '../a11y/names.js';
 import { rungFor, scoreText } from '../card/completion.js';
-import { conditionDot } from '../derive/condition.js';
+import { DOT_SIZE_PX, conditionDot } from '../derive/condition.js';
 import { token } from '../theme/tokens.js';
 import { formatTrackedBytes } from '../format/size.js';
 import { LIST_CHIP_COLUMN_PX, listChipsLabel, listRowChips } from './chips.js';
@@ -91,6 +91,8 @@ export function ListView(props: ListViewProps): ReactElement {
                   aria-hidden={dotName === null ? true : undefined}
                   style={
                     {
+                      width: `${String(DOT_SIZE_PX.listRow)}px`,
+                      height: `${String(DOT_SIZE_PX.listRow)}px`,
                       '--cdt-dot-fill': dot.fill ?? 'transparent',
                       '--cdt-dot-ring': dot.ring ?? 'none',
                     } as CSSProperties
