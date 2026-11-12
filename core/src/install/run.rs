@@ -25,6 +25,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::assembly::handoff::{hand_off_discovered, HandoffCtx};
 use crate::cancel::CancelToken;
+use crate::exclusion::gate::ExclusionGate;
 use crate::git::GitBackend;
 use crate::gitw::backend::MutatingGit;
 use crate::gitw::intent::{Intent, RemoteUrl};
@@ -61,6 +62,8 @@ pub struct InstallCtx<'a> {
     pub jobs: &'a dyn JobSink,
     /// Resolves the destination's store key, volume key and store class.
     pub mounts: &'a dyn MountResolver,
+    /// The core's exclusion gate, which the hand-off of the new copy asks before it reads.
+    pub exclusions: &'a ExclusionGate,
     /// §24.4's stage state, so a tile that mounts mid-clone reads a snapshot rather than waiting
     /// for the next event (R54).
     pub stages: &'a InstallStateStore,
@@ -234,6 +237,7 @@ fn index_destination(
     let handoff = HandoffCtx {
         git: ctx.probe,
         cancel: ctx.cancel,
+        exclusions: ctx.exclusions,
         store_class: facts.class,
         // A clone is not part of any scan run, so it claims none of their generations. §4.6's
         // sweep compares against the generation of the run that *walked*; a fresh clone has been

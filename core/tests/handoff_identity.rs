@@ -131,10 +131,15 @@ fn discovered_at(path: &Path) -> Discovered {
     }
 }
 
+/// The built-ins alone, for every hand-off here: none of these paths is excluded.
+static NO_EXCLUSIONS: std::sync::LazyLock<codotheca_core::exclusion::gate::ExclusionGate> =
+    std::sync::LazyLock::new(codotheca_core::exclusion::gate::ExclusionGate::default);
+
 fn ctx<'a>(git: &'a dyn GitBackend, cancel: &'a CancelToken) -> HandoffCtx<'a> {
     HandoffCtx {
         git,
         cancel,
+        exclusions: &NO_EXCLUSIONS,
         store_class: StoreClass::Local,
         generation: GENERATION,
         now: NOW,

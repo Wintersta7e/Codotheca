@@ -10,13 +10,13 @@
 //! §4.6 — presence, and the generation rule v1 omitted. Without it nothing ever left `present`,
 //! `last_seen_at` was written and never read, and acceptance criterion 4 could not pass.
 
+use codotheca_core::exclusion::gate::ExclusionGate;
 use codotheca_core::index::path::PathPlatform;
 use codotheca_core::paths::{path_bytes, path_key};
 use codotheca_core::scan::presence::{
     apply_presence, classify_presence, mark_root_unscanned, project_presence, LocationPresenceRow,
     Presence, PresenceContext, PresenceSummary, ScanRootRow, ScanStore,
 };
-use codotheca_core::scan::skiplist::SkipList;
 use codotheca_core::testing::MemScanStore;
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -73,12 +73,12 @@ fn presence_round_trips_through_the_text_the_column_stores() {
 #[test]
 fn seen_this_generation_is_present() {
     let roots = [root(1, "/r", true)];
-    let skip = SkipList::default();
+    let skip = ExclusionGate::default();
     let present = stores(&["s1"]);
     let ctx = PresenceContext {
         generation: 7,
         roots: &roots,
-        skip: &skip,
+        exclusions: &skip,
         present_stores: &present,
     };
     assert_eq!(
@@ -90,12 +90,12 @@ fn seen_this_generation_is_present() {
 #[test]
 fn not_seen_on_a_present_store_is_missing_and_on_an_absent_store_is_offline() {
     let roots = [root(1, "/r", true)];
-    let skip = SkipList::default();
+    let skip = ExclusionGate::default();
     let present = stores(&["s1"]);
     let ctx = PresenceContext {
         generation: 7,
         roots: &roots,
-        skip: &skip,
+        exclusions: &skip,
         present_stores: &present,
     };
     assert_eq!(
@@ -111,12 +111,12 @@ fn not_seen_on_a_present_store_is_missing_and_on_an_absent_store_is_offline() {
 #[test]
 fn a_disabled_root_makes_its_locations_unscanned_not_missing() {
     let roots = [root(1, "/r", false)];
-    let skip = SkipList::default();
+    let skip = ExclusionGate::default();
     let present = stores(&["s1"]);
     let ctx = PresenceContext {
         generation: 7,
         roots: &roots,
-        skip: &skip,
+        exclusions: &skip,
         present_stores: &present,
     };
     assert_eq!(
@@ -133,12 +133,15 @@ fn a_disabled_root_makes_its_locations_unscanned_not_missing() {
 #[test]
 fn a_newly_excluded_directory_becomes_unscanned() {
     let roots = [root(1, "/r", true)];
-    let skip = SkipList::with_user_entries(&["Archive".to_owned()]);
+    let skip = ExclusionGate::new(codotheca_core::exclusion::list::ExclusionList::new(
+        &["Archive".to_owned()],
+        Vec::new(),
+    ));
     let present = stores(&["s1"]);
     let ctx = PresenceContext {
         generation: 7,
         roots: &roots,
-        skip: &skip,
+        exclusions: &skip,
         present_stores: &present,
     };
     assert_eq!(
@@ -178,12 +181,12 @@ fn unplugging_a_volume_moves_locations_offline_and_deletes_nothing() {
     let before = store.location_count();
 
     let roots = store.scan_roots().unwrap();
-    let skip = SkipList::default();
+    let skip = ExclusionGate::default();
     let present = stores(&["internal"]); // the usb store is gone
     let ctx = PresenceContext {
         generation: 8,
         roots: &roots,
-        skip: &skip,
+        exclusions: &skip,
         present_stores: &present,
     };
     let summary = apply_presence(&store, &ctx).unwrap();
@@ -207,7 +210,7 @@ fn unplugging_a_volume_moves_locations_offline_and_deletes_nothing() {
     let rewalk = PresenceContext {
         generation: 9,
         roots: &roots,
-        skip: &skip,
+        exclusions: &skip,
         present_stores: &replugged,
     };
     let restored = apply_presence(&store, &rewalk).unwrap();

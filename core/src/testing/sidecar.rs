@@ -681,6 +681,7 @@ fn index_repo(
     let ctx = HandoffCtx {
         git,
         cancel: &cancel,
+        exclusions: &crate::exclusion::gate::ExclusionGate::default(),
         store_class: facts.class,
         generation: 1,
         now,

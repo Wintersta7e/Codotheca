@@ -112,6 +112,7 @@ impl Rig {
         let ctx = HandoffCtx {
             git: self.git.as_ref(),
             cancel: &self.cancel,
+            exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
             store_class: StoreClass::Local,
             generation: GENERATION,
             now: NOW,

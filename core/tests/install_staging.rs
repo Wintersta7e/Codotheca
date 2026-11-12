@@ -376,6 +376,7 @@ fn a_cancelled_run_removes_its_staging_and_leaves_no_location() {
         index: &index,
         jobs: &jobs,
         mounts: &mounts,
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         stages: &stages,
         events: &events,
         cancel: &token,

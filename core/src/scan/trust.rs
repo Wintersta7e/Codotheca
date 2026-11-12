@@ -20,6 +20,7 @@ use rusqlite::OptionalExtension as _;
 
 use crate::assembly::handoff::{hand_off_trusted, HandoffCtx, HandoffError};
 use crate::cancel::CancelToken;
+use crate::exclusion::gate::ExclusionGate;
 use crate::git::{GitBackend, StoreKey};
 use crate::index::Index;
 use crate::jobs::JobSink;
@@ -41,6 +42,8 @@ pub struct TrustCtx<'a> {
     pub mounts: &'a dyn MountResolver,
     /// Where the new location's ordinary pipeline is queued, as after a scan's hand-off.
     pub jobs: &'a dyn JobSink,
+    /// The core's exclusion gate, which the hand-off asks before it reads and before it writes.
+    pub exclusions: &'a ExclusionGate,
     /// The caller's clock reading, in unix seconds; `trusted_at` is stamped with it.
     pub now: i64,
 }
@@ -143,6 +146,7 @@ fn trust_problem(ctx: &TrustCtx<'_>, problem: ScanProblemId) -> Result<LocationI
     let handoff = HandoffCtx {
         git: ctx.git,
         cancel: &cancel,
+        exclusions: ctx.exclusions,
         store_class: facts.class,
         // The run that walked this folder and recorded the row: the location claims the
         // generation of the walk that saw it, never one it invents (§4.6).
@@ -254,9 +258,11 @@ fn handoff_refusal(err: &HandoffError) -> CommandFailure {
             .protocol_code()
             .and_then(|code| serde_json::from_value(serde_json::Value::from(code)).ok())
             .unwrap_or(ErrorCode::Internal),
-        HandoffError::Identity(_) | HandoffError::UnknownKind(_) | HandoffError::Poisoned => {
-            ErrorCode::Internal
-        }
+        // An exclusion's own code arrives with the command rows that answer it before any read.
+        HandoffError::Identity(_)
+        | HandoffError::UnknownKind(_)
+        | HandoffError::Poisoned
+        | HandoffError::Excluded => ErrorCode::Internal,
     };
     refusal(code, err.to_string())
 }

@@ -220,22 +220,9 @@ struct RootKey {
     key: Vec<u8>,
 }
 
-/// Set `location.excluded` on every non-removed copy to `list`'s answer for it, and answer which
-/// copies moved.
-///
-/// A root is keyed from its stored `path_bytes` under the platform its `kind` implies, never from
-/// its stored `path_key` (GA36): the two disagree for a WSL root added on a Windows host, whose
-/// key was folded like a Windows path while its copies keep case.
-///
-/// # Errors
-/// Fails when SQLite refuses a read or a write, or a row holds a `kind` this build does not know.
-pub fn apply_coverage(
-    tx: &Transaction<'_>,
-    list: &ExclusionList,
-) -> Result<CoverageDelta, IndexError> {
-    /// `(id, kind, distro, path_bytes, path_key, excluded)`.
-    type Copy = (i64, LocationKind, String, Vec<u8>, Vec<u8>, bool);
-    let roots: Vec<RootKey> = tx
+/// Every `scan_root`, keyed from its bytes under the platform its `kind` implies (GA36).
+fn load_roots(conn: &Connection) -> Result<Vec<RootKey>, IndexError> {
+    Ok(conn
         .prepare("SELECT kind, distro, path_bytes FROM scan_root")?
         .query_map([], |r| {
             Ok((r.get::<_, String>(0)?, r.get(1)?, r.get::<_, Vec<u8>>(2)?))
@@ -253,7 +240,62 @@ pub fn apply_coverage(
                 }
             })
         })
-        .collect::<Result<_, _>>()?;
+        .collect::<Result<_, _>>()?)
+}
+
+/// The bytes of the innermost root holding a copy keyed `path_key`: the longest key it lies under.
+fn innermost_root(
+    roots: &[RootKey],
+    kind: LocationKind,
+    distro: &str,
+    path_key: &[u8],
+) -> Option<Vec<u8>> {
+    roots
+        .iter()
+        .filter(|r| r.kind == kind.as_str() && r.distro == distro && is_under(path_key, &r.key))
+        .max_by_key(|r| r.key.len())
+        .map(|r| r.bytes.clone())
+}
+
+/// What coverage of a copy at `path_bytes` is decided from before it has a `location` row: the
+/// hand-off's candidate (§56.5 rows 2 and 4), keyed as its row would be.
+///
+/// # Errors
+/// Fails when SQLite refuses the read of `scan_root`.
+pub fn candidate_key(
+    conn: &Connection,
+    kind: LocationKind,
+    distro: &str,
+    path_bytes: &[u8],
+) -> Result<LocationKey, IndexError> {
+    let path_key = StoredPath::from_bytes(path_bytes.to_vec(), platform_of(kind.as_str()))
+        .key()
+        .to_vec();
+    Ok(LocationKey {
+        kind,
+        distro: distro.to_owned(),
+        path_bytes: path_bytes.to_vec(),
+        root_path_bytes: innermost_root(&load_roots(conn)?, kind, distro, &path_key),
+        path_key,
+    })
+}
+
+/// Set `location.excluded` on every non-removed copy to `list`'s answer for it, and answer which
+/// copies moved.
+///
+/// A root is keyed from its stored `path_bytes` under the platform its `kind` implies, never from
+/// its stored `path_key` (GA36): the two disagree for a WSL root added on a Windows host, whose
+/// key was folded like a Windows path while its copies keep case.
+///
+/// # Errors
+/// Fails when SQLite refuses a read or a write, or a row holds a `kind` this build does not know.
+pub fn apply_coverage(
+    tx: &Transaction<'_>,
+    list: &ExclusionList,
+) -> Result<CoverageDelta, IndexError> {
+    /// `(id, kind, distro, path_bytes, path_key, excluded)`.
+    type Copy = (i64, LocationKind, String, Vec<u8>, Vec<u8>, bool);
+    let roots = load_roots(tx)?;
     let copies: Vec<Copy> = tx
         .prepare(
             "SELECT id, kind, distro, path_bytes, path_key, excluded FROM location
@@ -277,14 +319,7 @@ pub fn apply_coverage(
     let mut delta = CoverageDelta::default();
     let mut update = tx.prepare("UPDATE location SET excluded = ?1 WHERE id = ?2")?;
     for (id, kind, distro, path_bytes, path_key, was) in copies {
-        // The innermost root holding the copy: the longest key it lies under.
-        let root = roots
-            .iter()
-            .filter(|r| {
-                r.kind == kind.as_str() && r.distro == distro && is_under(&path_key, &r.key)
-            })
-            .max_by_key(|r| r.key.len())
-            .map(|r| r.bytes.clone());
+        let root = innermost_root(&roots, kind, &distro, &path_key);
         let now = list.covers_location(&LocationKey {
             kind,
             distro,

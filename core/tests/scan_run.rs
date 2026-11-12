@@ -18,7 +18,7 @@
 //! walked: without a `store_key` no `location` row can be written for anything found under it.
 
 use codotheca_core::cancel::CancelToken;
-use codotheca_core::exclusion::list::ExclusionList;
+use codotheca_core::exclusion::gate::ExclusionGate;
 use codotheca_core::git::RepoFacts;
 use codotheca_core::index::Index;
 use codotheca_core::mount::{MountFacts, StoreClass};
@@ -143,7 +143,7 @@ struct Rig {
     index: Arc<Mutex<Index>>,
     git: FakeGitBackend,
     clock: FakeClock,
-    exclusions: ExclusionList,
+    exclusions: ExclusionGate,
     cancel: CancelToken,
     jobs: Arc<RecordingJobs>,
 }
@@ -157,7 +157,7 @@ fn rig() -> Rig {
         index: Arc::new(Mutex::new(index)),
         git: FakeGitBackend::new(),
         clock: FakeClock::new(NOW),
-        exclusions: ExclusionList::default(),
+        exclusions: ExclusionGate::default(),
         cancel: CancelToken::new(),
         jobs: Arc::new(RecordingJobs::default()),
     }

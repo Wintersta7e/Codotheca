@@ -534,6 +534,7 @@ fn child_install_ends_network() {
         index: &index,
         jobs: &jobs,
         mounts: &mounts,
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         stages: &stages,
         events: &DropEvents,
         cancel: &cancel,

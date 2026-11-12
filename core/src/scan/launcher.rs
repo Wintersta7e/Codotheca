@@ -23,7 +23,6 @@ use std::thread;
 use crate::cancel::CancelToken;
 use crate::clock::Clock;
 use crate::exclusion::gate::ExclusionGate;
-use crate::exclusion::list::ExclusionList;
 use crate::git::GitBackend;
 use crate::index::Index;
 use crate::jobs::JobSink;
@@ -113,13 +112,13 @@ impl ThreadScanLauncher {
         }
     }
 
-    fn runner<'a>(&'a self, cancel: &'a CancelToken, list: &'a ExclusionList) -> ScanRunner<'a> {
+    fn runner<'a>(&'a self, cancel: &'a CancelToken) -> ScanRunner<'a> {
         ScanRunner {
             store: self.store.as_ref(),
             git: self.git.as_ref(),
             mounts: Arc::clone(&self.mounts),
             clock: self.clock.as_ref(),
-            exclusions: list,
+            exclusions: &self.exclusions,
             cancel,
             index: self.index.as_ref(),
             wsl: self.wsl.as_deref(),
@@ -250,9 +249,7 @@ impl ScanLauncher for ThreadScanLauncher {
         cancel: CancelToken,
         progress: Arc<ScanProgressCell>,
     ) -> Result<LaunchedScan, ScanStoreError> {
-        let begun = self
-            .runner(&cancel, &self.exclusions.snapshot())
-            .begin(mode)?;
+        let begun = self.runner(&cancel).begin(mode)?;
         let launched = LaunchedScan {
             scan_run_id: ScanRunId(begun.scan_run_id),
             generation: begun.generation,
@@ -274,8 +271,7 @@ impl ScanLauncher for ThreadScanLauncher {
         let spawned = thread::Builder::new()
             .name("codotheca-scan".to_owned())
             .spawn(move || {
-                let list = worker.exclusions.snapshot();
-                let outcome = worker.runner(&cancel, &list).finish(begun, &|event| {
+                let outcome = worker.runner(&cancel).finish(begun, &|event| {
                     worker.publish_walk_event(run_id, &published, &worker_progress, event);
                 });
                 match outcome {

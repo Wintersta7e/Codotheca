@@ -16,12 +16,12 @@
 //! `resolve_identity` holds. `core/tests/handoff_identity.rs` asserts that writer's idempotence
 //! against the real database.
 
+use codotheca_core::exclusion::gate::ExclusionGate;
 use codotheca_core::index::path::{PathPlatform, StoredPath};
 use codotheca_core::index::Index;
 use codotheca_core::scan::presence::{
     apply_presence, Presence, PresenceContext, ScanRunFinish, ScanRunStart, ScanStore,
 };
-use codotheca_core::scan::skiplist::SkipList;
 use codotheca_core::scan::store::SqliteScanStore;
 use codotheca_core::scan::{ScanProblem, ScanProblemKind};
 use std::collections::BTreeSet;
@@ -238,7 +238,7 @@ fn a_presence_sweep_over_the_real_index_deletes_nothing() {
     let a = seed_location(&h, "/r/a", "internal", 1);
     let b = seed_location(&h, "/r/b", "usb", 1);
     let roots = h.store.scan_roots().unwrap();
-    let skip = SkipList::default();
+    let skip = ExclusionGate::default();
     let mut present = BTreeSet::new();
     present.insert("internal".to_owned());
 
@@ -247,7 +247,7 @@ fn a_presence_sweep_over_the_real_index_deletes_nothing() {
         &PresenceContext {
             generation: 2,
             roots: &roots,
-            skip: &skip,
+            exclusions: &skip,
             present_stores: &present,
         },
     )

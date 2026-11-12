@@ -129,6 +129,7 @@ impl Library {
         let ctx = HandoffCtx {
             git: self.git.as_ref(),
             cancel: &cancel,
+            exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
             store_class: StoreClass::Local,
             generation: 1,
             now: NOW,

@@ -354,6 +354,7 @@ fn ac_p4_46_18_reinstalling_at_the_uninstalled_path_clears_removed_at() {
     let handoff = HandoffCtx {
         git: &probe,
         cancel: &cancel,
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         store_class: StoreClass::Local,
         generation: 1,
         now: NOW,
@@ -372,6 +373,7 @@ fn ac_p4_46_18_reinstalling_at_the_uninstalled_path_clears_removed_at() {
         index: &rig.index,
         jobs: &jobs,
         mounts: &mounts,
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         stages: &stages,
         events: &events,
         cancel: &cancel,

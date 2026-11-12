@@ -527,6 +527,7 @@ impl CoreHandler {
                     git: self.git.as_ref(),
                     mounts: self.mount.as_ref(),
                     jobs: self.jobs.sink_ref(),
+                    exclusions: &self.exclusions,
                     now,
                 },
                 args,
@@ -665,6 +666,7 @@ impl CoreHandler {
         let write_git = Arc::clone(&self.write_git);
         let probe = Arc::clone(&self.git);
         let mounts = Arc::clone(&self.mount);
+        let exclusions = Arc::clone(&self.exclusions);
         let jobs = self.jobs.sink();
         let queue = Arc::clone(&self.installs);
         let stages = Arc::clone(&self.install_stages);
@@ -679,6 +681,7 @@ impl CoreHandler {
             let write_git = Arc::clone(&write_git);
             let probe = Arc::clone(&probe);
             let mounts = Arc::clone(&mounts);
+            let exclusions = Arc::clone(&exclusions);
             let jobs = Arc::clone(&jobs);
             let queue = Arc::clone(&queue);
             let stages = Arc::clone(&stages);
@@ -696,6 +699,7 @@ impl CoreHandler {
                     index: &index,
                     jobs: jobs.as_ref(),
                     mounts: mounts.as_ref(),
+                    exclusions: exclusions.as_ref(),
                     stages: stages.as_ref(),
                     events: events.as_ref(),
                     cancel: &cancel,

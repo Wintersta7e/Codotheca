@@ -8,12 +8,14 @@
 //! made under the index guard sees either the list before the change began or the list after it
 //! committed.
 
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use rusqlite::Transaction;
 
 use super::list::{ExclusionList, LocationKey};
+use crate::index::path::PathPlatform;
 
 /// Where a check is made: one variant per row of §56.5's audit table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -183,18 +185,33 @@ impl ExclusionGate {
         self.decide(site, target)
     }
 
+    /// A list held across many checks, which follows this gate's swaps: the walk's, which asks
+    /// once per directory and must not take the gate's lock to do it.
+    #[must_use]
+    pub fn held(&self) -> HeldList<'_> {
+        // The epoch first: a swap landing between the two reads leaves a newer list under an
+        // older epoch, which the next check re-reads, never an older list under a newer one.
+        let epoch = self.epoch();
+        HeldList {
+            gate: self,
+            epoch,
+            list: self.snapshot(),
+        }
+    }
+
     fn decide(&self, site: GateSite, target: &LocationKey) -> Result<(), Covered> {
         let covered = self.snapshot().covers_location(target);
         #[cfg(feature = "testkit")]
+        self.note(site, covered);
+        verdict(site, covered)
+    }
+
+    #[cfg(feature = "testkit")]
+    fn note(&self, site: GateSite, covered: bool) {
         self.record
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((site, !covered));
-        if covered {
-            Err(Covered { site })
-        } else {
-            Ok(())
-        }
     }
 
     /// Every check made so far as `(site, admitted)`, which §56.5's audit reads.
@@ -205,5 +222,49 @@ impl ExclusionGate {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+}
+
+/// A check's answer: refused at `site` when `covered`.
+const fn verdict(site: GateSite, covered: bool) -> Result<(), Covered> {
+    if covered {
+        Err(Covered { site })
+    } else {
+        Ok(())
+    }
+}
+
+/// One reader's copy of the gate's list, re-read only when the gate's epoch has moved: one
+/// atomic load per check while nothing changes, and the new list at the first check after a swap.
+#[derive(Debug)]
+pub struct HeldList<'g> {
+    gate: &'g ExclusionGate,
+    epoch: u64,
+    list: Arc<ExclusionList>,
+}
+
+impl HeldList<'_> {
+    /// The list in force as of this call.
+    pub fn current(&mut self) -> &ExclusionList {
+        let now = self.gate.epoch();
+        if now != self.epoch {
+            self.list = self.gate.snapshot();
+            self.epoch = now;
+        }
+        &self.list
+    }
+
+    /// The walk's check (§56.5 row 1), asked of a directory below the root before it is entered:
+    /// its own name, and the path entries of the walk's side, keyed by `platform`. The walk never
+    /// enters a refused directory, so no ancestor of `dir` needs asking again.
+    ///
+    /// # Errors
+    /// `Covered` at [`GateSite::WalkDir`] when the list in force covers `dir`; it is not entered.
+    pub fn check_dir(&mut self, dir: &Path, platform: PathPlatform) -> Result<(), Covered> {
+        let list = self.current();
+        let covered = list.names().skips(dir) || list.covers_path(dir, "", platform);
+        #[cfg(feature = "testkit")]
+        self.gate.note(GateSite::WalkDir, covered);
+        verdict(GateSite::WalkDir, covered)
     }
 }

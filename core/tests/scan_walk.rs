@@ -12,7 +12,7 @@
 //! unless `descend_into_repos` is set.
 
 use codotheca_core::cancel::CancelToken;
-use codotheca_core::exclusion::list::ExclusionList;
+use codotheca_core::exclusion::gate::ExclusionGate;
 use codotheca_core::git::{RepoFacts, StoreKey};
 use codotheca_core::index::path::native_platform;
 use codotheca_core::mount::{MountFacts, StoreClass};
@@ -79,7 +79,7 @@ fn links_for(root: &Path, opts: &WalkOptions) -> Arc<LinkPolicy> {
 
 /// Walk `root` and return every repository found, sorted, plus the directory count.
 fn collect(root: &Path, opts: WalkOptions) -> (Vec<(PathBuf, RepoKind)>, u64) {
-    let exclusions = ExclusionList::default();
+    let exclusions = ExclusionGate::default();
     let git = bare_saying_git();
     let cancel = CancelToken::new();
     let probe = ProbeCtx::new(&git, StoreKey::new("store-a"), StoreClass::Local, &cancel);
@@ -199,7 +199,7 @@ fn cancellation_stops_the_walk() {
         threads: 1,
         ..WalkOptions::default()
     };
-    let exclusions = ExclusionList::default();
+    let exclusions = ExclusionGate::default();
     let git = bare_saying_git();
     let cancel = CancelToken::new();
     cancel.cancel();
@@ -260,7 +260,7 @@ fn a_submodule_under_a_repository_root_is_reached_without_descending() {
     std::fs::write(child.join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
 
     let opts = WalkOptions::default();
-    let exclusions = ExclusionList::default();
+    let exclusions = ExclusionGate::default();
     let git = bare_saying_git();
     let cancel = CancelToken::new();
     let probe = ProbeCtx::new(&git, StoreKey::new("store-a"), StoreClass::Local, &cancel);

@@ -29,6 +29,7 @@ use codotheca_core::cancel::CancelToken;
 use codotheca_core::clock::Clock as _;
 use codotheca_core::debt::store::{DebtStore as _, SqliteDebtStore};
 use codotheca_core::detail::{dispatch_detail_command, DetailCtx};
+use codotheca_core::exclusion::gate::ExclusionGate;
 use codotheca_core::git::{GitBackend, GitSlots, RepoHandle, StoreKey, SystemGit};
 use codotheca_core::health::switches::write_switches;
 use codotheca_core::index::Index;
@@ -43,7 +44,6 @@ use codotheca_core::protocol::{DebtSource, HealthCheckSwitch, LocationId, Projec
 use codotheca_core::scan::discover::{RepoCandidate, RepoKind};
 use codotheca_core::scan::presence::{apply_presence, PresenceContext, ScanRootRow};
 use codotheca_core::scan::run::{platform_of, Discovered};
-use codotheca_core::scan::skiplist::SkipList;
 use codotheca_core::scan::store::SqliteScanStore;
 use codotheca_core::sync::runner::NullSyncSink;
 use codotheca_core::testing::{FakeClock, FakeMountResolver};
@@ -236,6 +236,7 @@ impl Rig {
         let ctx = HandoffCtx {
             git: self.git.as_ref(),
             cancel: &cancel,
+            exclusions: &ExclusionGate::default(),
             store_class: StoreClass::Local,
             generation: self.generation.get(),
             now: self.clock.now_unix(),
@@ -258,12 +259,12 @@ impl Rig {
             enabled: true,
             descend_into_repos: false,
         }];
-        let skip = SkipList::default();
+        let skip = ExclusionGate::default();
         let present_stores = BTreeSet::new();
         let ctx = PresenceContext {
             generation: self.generation.get(),
             roots: &roots,
-            skip: &skip,
+            exclusions: &skip,
             present_stores: &present_stores,
         };
         let store = SqliteScanStore::new(Arc::clone(&self.index));

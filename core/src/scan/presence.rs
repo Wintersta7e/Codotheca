@@ -14,8 +14,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::paths::{is_under, path_from_bytes};
-use crate::scan::skiplist::SkipList;
+use crate::exclusion::gate::{ExclusionGate, GateSite};
+use crate::exclusion::list::LocationKey;
+use crate::paths::is_under;
+use crate::protocol::LocationKind;
 
 /// R31: `Presence` is declared in `protocol/schema/protocol.json` and generated into
 /// `crate::protocol`; a second hand-written copy compiles and then drifts from the wire form.
@@ -101,9 +103,9 @@ pub struct PresenceContext<'a> {
     pub generation: i64,
     /// Every `scan_root` row, enabled or not; a location under no enabled one is `unscanned`.
     pub roots: &'a [ScanRootRow],
-    /// The exclusion list in force, so a location inside an excluded directory reads
-    /// `unscanned` rather than `missing`.
-    pub skip: &'a SkipList,
+    /// The exclusion gate, asked of every location (§56.5 row 3), so one inside an excluded
+    /// directory or path entry reads `unscanned` rather than `missing`.
+    pub exclusions: &'a ExclusionGate,
     /// Every store at least one enabled root was reachable on this generation.
     pub present_stores: &'a BTreeSet<String>,
 }
@@ -118,15 +120,13 @@ pub fn classify_presence(row: &LocationPresenceRow, ctx: &PresenceContext<'_>) -
     else {
         return Presence::Unscanned;
     };
-    // `covers`, not `skips`: this row names the repository *inside* an excluded directory, and
-    // asking whether its own final component is on the list answers the wrong question — the
-    // location would come back `missing`, claiming a repository is gone when the walk simply
-    // never descended to it.
-    if ctx.skip.covers(
-        &path_from_bytes(&row.path_bytes),
-        &path_from_bytes(&root.path_bytes),
-    ) {
-        return Presence::Unscanned;
+    // Coverage of the whole copy, not a test of its own final component: this row names the
+    // repository *inside* an excluded directory, and the location would otherwise come back
+    // `missing`, claiming a repository is gone when the walk simply never descended to it.
+    if let Some(key) = location_key(row, root, ctx.roots) {
+        if ctx.exclusions.check_read(GateSite::Presence, &key).is_err() {
+            return Presence::Unscanned;
+        }
     }
     if row.scan_generation == ctx.generation {
         return Presence::Present;
@@ -136,6 +136,31 @@ pub fn classify_presence(row: &LocationPresenceRow, ctx: &PresenceContext<'_>) -
     } else {
         Presence::Offline
     }
+}
+
+/// What the gate decides `row`'s coverage from. A copy has its root's kind and distro, and a name
+/// applies below the innermost root holding it, enabled or not (§4.3). `None` for a root kind
+/// this build does not know, whose paths no rule here can fold; the walk never reached it either.
+fn location_key(
+    row: &LocationPresenceRow,
+    root: &ScanRootRow,
+    roots: &[ScanRootRow],
+) -> Option<LocationKey> {
+    let kind = LocationKind::parse(&root.kind)?;
+    let innermost = roots
+        .iter()
+        .filter(|r| {
+            r.kind == root.kind && r.distro == root.distro && is_under(&row.path_key, &r.path_key)
+        })
+        .max_by_key(|r| r.path_key.len())
+        .unwrap_or(root);
+    Some(LocationKey {
+        kind,
+        distro: root.distro.clone(),
+        path_bytes: row.path_bytes.clone(),
+        path_key: row.path_key.clone(),
+        root_path_bytes: Some(innermost.path_bytes.clone()),
+    })
 }
 
 /// The project rollup. `project` has no presence column: this is derived at read time, which is

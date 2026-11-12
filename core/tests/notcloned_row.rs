@@ -158,8 +158,8 @@ fn a_zero_location_project_carries_no_presence_and_a_located_one_keeps_its_own()
 /// so a project with none is untouched by it — not `missing`, not `offline`, not `unscanned`.
 #[test]
 fn the_presence_rollup_is_byte_identical_when_a_zero_location_project_is_added() {
+    use codotheca_core::exclusion::gate::ExclusionGate;
     use codotheca_core::scan::presence::{apply_presence, PresenceContext, ScanStore};
-    use codotheca_core::scan::skiplist::SkipList;
     use codotheca_core::scan::store::SqliteScanStore;
     use std::collections::BTreeSet;
     use std::sync::{Arc, Mutex};
@@ -170,12 +170,12 @@ fn the_presence_rollup_is_byte_identical_when_a_zero_location_project_is_added()
     located_project(index.lock().expect("lock").conn(), 2, "cloned");
 
     let roots = store.scan_roots().expect("roots");
-    let skip = SkipList::default();
+    let skip = ExclusionGate::default();
     let present: BTreeSet<String> = BTreeSet::new();
     let ctx = PresenceContext {
         generation: 1,
         roots: &roots,
-        skip: &skip,
+        exclusions: &skip,
         present_stores: &present,
     };
     // Twice, so `changed` has settled to 0 and the comparison below is about the added project

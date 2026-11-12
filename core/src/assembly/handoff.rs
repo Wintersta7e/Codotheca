@@ -21,6 +21,8 @@ use std::sync::Mutex;
 use crate::cancel::CancelToken;
 use crate::debt::store::{DebtStore as _, SqliteDebtStore};
 use crate::derive::LocationKind;
+use crate::exclusion::gate::{ExclusionGate, GateSite};
+use crate::exclusion::store::candidate_key;
 use crate::git::{
     establish_ownership, GitBackend, GitDirSelect, GitError, JobClass, JobContext, RepoHandle,
     StoreKey,
@@ -75,6 +77,10 @@ pub enum HandoffError {
     /// it first — so the whole transaction rolled back and nothing was written.
     #[error("that problem has already been answered")]
     ProblemGone,
+    /// The exclusion list covers the repository (§56.5 rows 2 and 4): nothing was read from it,
+    /// or an entry added while it was being read stopped the write.
+    #[error("the folder is excluded from scanning")]
+    Excluded,
 }
 
 /// Everything the hand-off needs that is not the index or the discovery itself.
@@ -83,6 +89,9 @@ pub struct HandoffCtx<'a> {
     pub git: &'a dyn GitBackend,
     /// The scan run's token, so a cancelled run stops probing.
     pub cancel: &'a CancelToken,
+    /// The core's exclusion gate, asked before the first git read and again inside the
+    /// transaction before the first write.
+    pub exclusions: &'a ExclusionGate,
     /// `MountFacts.class`, resolved once by the walk (**R4**). Not persisted — the class is a
     /// property of the mount right now, not of the location (R27) — but the git slot pool caps
     /// on it, so a probe without it would run against a network share at a local store's
@@ -147,6 +156,7 @@ fn hand_off(
     let kind = LocationKind::parse(&discovered.kind)
         .ok_or_else(|| HandoffError::UnknownKind(discovered.kind.clone()))?;
     let platform = platform_of(&discovered.kind);
+    admitted_to_read(index, ctx, kind, discovered)?;
     // Everything git, with **nothing locked**. A test asserts the mutex is free throughout.
     // A trusted handle passes `establish_ownership` unprobed: the user has answered that question.
     let job = JobContext::new(JobClass::Background, ctx.cancel, Some(GIT_PROBE_TIMEOUT));
@@ -193,8 +203,15 @@ fn hand_off(
     let aliases = crate::provider::declared_host_aliases();
 
     let mut problem_gone = false;
+    let mut excluded = false;
     let mut guard = index.lock().map_err(|_| HandoffError::Poisoned)?;
     let indexed = guard.with_tx(|tx| {
+        if !admitted_to_write(tx, ctx, kind, discovered)? {
+            excluded = true;
+            return Err(IndexError::Corrupt {
+                detail: "the folder is excluded from scanning".to_owned(),
+            });
+        }
         // R1: the decision and the row it decides are **one** transaction. A committed decision
         // without its row is a repository that was discovered and then vanished.
         // §22.4: a scan that would create a row hydrates the single not-cloned project on this
@@ -259,10 +276,50 @@ fn hand_off(
         })
     });
     drop(guard);
+    if excluded {
+        return Err(HandoffError::Excluded);
+    }
     if problem_gone {
         return Err(HandoffError::ProblemGone);
     }
     Ok(indexed?)
+}
+
+/// §56.5 row 4: the gate sits in front of the ownership probe, so a covered copy costs no git.
+/// The key's root comes from `scan_root`, read under the lock and released before any git.
+fn admitted_to_read(
+    index: &Mutex<Index>,
+    ctx: &HandoffCtx<'_>,
+    kind: LocationKind,
+    discovered: &Discovered,
+) -> Result<(), HandoffError> {
+    let key = {
+        let guard = index.lock().map_err(|_| HandoffError::Poisoned)?;
+        candidate_key(
+            guard.conn(),
+            kind,
+            &discovered.distro,
+            &discovered.path_bytes,
+        )?
+    };
+    ctx.exclusions
+        .check_read(GateSite::OwnershipProbe, &key)
+        .map_err(|_| HandoffError::Excluded)
+}
+
+/// §56.5 row 2: an entry added while the reads ran stops the write. The check reads the gate
+/// inside `tx`, under the guard no add or remove is part-way through. `false` when covered.
+fn admitted_to_write(
+    tx: &rusqlite::Transaction<'_>,
+    ctx: &HandoffCtx<'_>,
+    kind: LocationKind,
+    discovered: &Discovered,
+) -> Result<bool, IndexError> {
+    let key = candidate_key(tx, kind, &discovered.distro, &discovered.path_bytes)?;
+    Ok(ctx
+        .exclusions
+        .check_write(GateSite::Handoff, tx, &key)
+        .is_ok())
 }
 
 /// Trust's two writes, in the hand-off's transaction: `location.trusted_at` on the row just

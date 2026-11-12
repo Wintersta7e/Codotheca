@@ -6,6 +6,7 @@
 //! is the shape the `cat-file --batch-check` deadlock did not have.
 
 use crate::cancel::CancelToken;
+use crate::exclusion::gate::ExclusionGate;
 use crate::exclusion::list::{ExclusionList, PathEntry};
 use crate::git::{
     GitBackend, GitResult, JobClass, JobContext, RepoHandle, StatusOptions, StoreKey,
@@ -278,7 +279,8 @@ pub fn walk(
         descend_into_repos: request.descend_into_repos,
         bare_candidates: request.bare_candidates,
     };
-    let exclusions = walk_exclusions(request);
+    // The request's list is the whole of it for this walk: nothing swaps it while it runs.
+    let exclusions = ExclusionGate::new(walk_exclusions(request));
     let cancel = CancelToken::new();
     let root = PathBuf::from(&request.root);
     let root_facts = ctx.mounts.facts_for(&ctx.distro, &request.root);

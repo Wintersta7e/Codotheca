@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use ignore::{DirEntry, WalkBuilder, WalkState};
 
-use crate::exclusion::list::ExclusionList;
+use crate::exclusion::gate::ExclusionGate;
 use crate::index::path::PathPlatform;
 use crate::paths::path_display;
 use crate::scan::discover::{classify_dir, ProbeCtx};
@@ -43,9 +43,11 @@ pub struct WalkStats {
 pub struct WalkCtx<'a> {
     /// This root's walk policy.
     pub opts: &'a WalkOptions,
-    /// The exclusion list, applied to every directory below the root: its names and the path
-    /// entries of the side this walk runs on, which carry an empty distro.
-    pub exclusions: &'a ExclusionList,
+    /// The exclusion gate, asked of every directory below the root: the list's names and the
+    /// path entries of the side this walk runs on, which carry an empty distro. Each worker
+    /// thread holds the list and re-reads it when the gate swaps, so an entry added mid-walk
+    /// stops descent at the next directory tested.
+    pub exclusions: &'a ExclusionGate,
     /// The rules this walk's directories are keyed by for the path entries: the host's for the
     /// native walk, `Unix` inside a distro whatever the host is.
     pub platform: PathPlatform,
@@ -91,6 +93,7 @@ pub fn walk_root(root: &Path, ctx: &WalkCtx<'_>, sink: &WalkSink<'_>) -> WalkSta
     let (walked, found, quit) = (&walked, &found, &quit);
 
     builder.build_parallel().run(|| {
+        let mut held = ctx.exclusions.held();
         Box::new(move |result| {
             if ctx.probe.cancel().is_cancelled() {
                 quit.store(true, Ordering::Relaxed);
@@ -132,10 +135,7 @@ pub fn walk_root(root: &Path, ctx: &WalkCtx<'_>, sink: &WalkSink<'_>) -> WalkSta
             //    a `PathBuf` would be moved out of an `FnMut` and would not compile.
             //    The walk never enters a skipped directory, so testing this one alone is the
             //    whole of `covers_dir` here, without its walk up the ancestors.
-            if dir != root
-                && (ctx.exclusions.names().skips(dir)
-                    || ctx.exclusions.covers_path(dir, "", ctx.platform))
-            {
+            if dir != root && held.check_dir(dir, ctx.platform).is_err() {
                 return WalkState::Skip;
             }
 

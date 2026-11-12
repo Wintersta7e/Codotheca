@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use crate::assembly::handoff::{hand_off_discovered, HandoffCtx, HandoffError};
 use crate::cancel::CancelToken;
 use crate::clock::Clock;
-use crate::exclusion::list::ExclusionList;
+use crate::exclusion::gate::ExclusionGate;
 use crate::git::{GitBackend, GitError, StoreKey};
 use crate::index::path::{native_platform, PathPlatform};
 use crate::index::Index;
@@ -122,8 +122,8 @@ pub struct ScanRunner<'a> {
     pub mounts: Arc<dyn MountResolver>,
     /// The unix-seconds clock the `scan_run` row and the hand-off are stamped with.
     pub clock: &'a dyn Clock,
-    /// The exclusion list (§4.3, §56.4) the walk and presence both apply.
-    pub exclusions: &'a ExclusionList,
+    /// The exclusion gate (§4.3, §56.4, §56.5) the walk, the hand-off and presence each ask.
+    pub exclusions: &'a ExclusionGate,
     /// The run's §4.8 token, polled by the walk and handed to every git probe it makes.
     pub cancel: &'a CancelToken,
     /// The one `rusqlite::Connection`, shared rather than owned (R39).
@@ -278,7 +278,7 @@ impl ScanRunner<'_> {
                 &PresenceContext {
                     generation,
                     roots: &roots,
-                    skip: self.exclusions.names(),
+                    exclusions: self.exclusions,
                     present_stores: &survey.present_stores,
                 },
             )?
@@ -661,6 +661,7 @@ impl ScanRunner<'_> {
         let ctx = HandoffCtx {
             git: self.git,
             cancel: self.cancel,
+            exclusions: self.exclusions,
             store_class,
             generation,
             now: self.clock.now_unix(),
@@ -676,7 +677,9 @@ impl ScanRunner<'_> {
                 true
             }
             Err(err) => {
-                if self.cancel.is_cancelled() {
+                // A copy the user excluded mid-walk is not a problem with the repository, and a
+                // row naming its path would be a read of it the user has refused.
+                if self.cancel.is_cancelled() || matches!(err, HandoffError::Excluded) {
                     return false;
                 }
                 let detail = if is_lossy(discovered) {
