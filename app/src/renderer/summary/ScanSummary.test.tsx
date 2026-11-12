@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { type ReactElement, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProblemGroup, ProblemItem, ProblemKind, Problems } from '../../generated/protocol';
 import type { ErrorRequest } from '../errors/ErrorExplained';
+import { CLOSE_LABEL } from '../firstrun/copy';
 import { ScanSummary } from './ScanSummary';
 import { NO_PROBLEMS_HEADING, PROBLEM_GROUP_LABEL, PROBLEMS_DISMISSED_HEADING } from './copy';
 
@@ -48,6 +50,7 @@ interface Drawn {
   readonly calls: { name: string; args: unknown }[];
   readonly onOpenProject: ReturnType<typeof vi.fn>;
   readonly onChanged: ReturnType<typeof vi.fn>;
+  readonly onClose: ReturnType<typeof vi.fn>;
 }
 
 function draw(
@@ -62,6 +65,7 @@ function draw(
   }) as unknown as ErrorRequest;
   const onOpenProject = vi.fn();
   const onChanged = vi.fn();
+  const onClose = vi.fn();
   render(
     <ScanSummary
       problems={problems}
@@ -69,9 +73,10 @@ function draw(
       request={request}
       onOpenProject={onOpenProject}
       onChanged={onChanged}
+      onClose={onClose}
     />,
   );
-  return { calls, onOpenProject, onChanged };
+  return { calls, onOpenProject, onChanged, onClose };
 }
 
 const untrusted = group('untrusted_repo', [
@@ -267,5 +272,78 @@ describe('a run whose banner was dismissed', () => {
     draw(payload([untrusted, ambiguous]));
     expect(screen.getByText(new RegExp(PROBLEM_GROUP_LABEL.untrusted_repo, 'u'))).toBeTruthy();
     expect(screen.queryByText(PROBLEMS_DISMISSED_HEADING)).toBeNull();
+  });
+});
+
+describe('closing it', () => {
+  const noScanYet = payload(
+    [],
+    { walkedDirs: 0, repositories: 0, problemCount: null, ambiguousLineageCount: null },
+    null,
+  );
+
+  it('draws CLOSE with a report and with none, and the control closes it', () => {
+    for (const problems of [payload([untrusted]), noScanYet]) {
+      const { onClose } = draw(problems);
+      expect(screen.queryByTestId('sum-header') === null).toBe(problems === noScanYet);
+      fireEvent.click(screen.getByRole('button', { name: CLOSE_LABEL }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+      cleanup();
+    }
+  });
+
+  it('closes on Esc, and the key reaches no window listener under it', () => {
+    const underneath = vi.fn();
+    window.addEventListener('keydown', underneath);
+    try {
+      const { onClose } = draw(payload([untrusted]));
+      // Focus is moved in on open, so the key lands on a real element inside the summary (R45).
+      const target = document.activeElement;
+      expect(target).toBe(screen.getByRole('button', { name: CLOSE_LABEL }));
+      fireEvent.keyDown(target ?? document.body, { key: 'Escape', code: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(underneath).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('keydown', underneath);
+    }
+  });
+
+  it('returns focus to the control that opened it', () => {
+    function Host(): ReactElement {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(true);
+            }}
+          >
+            PROBLEMS
+          </button>
+          {open ? (
+            <ScanSummary
+              problems={payload([untrusted])}
+              request={vi.fn()}
+              onOpenProject={vi.fn()}
+              onChanged={vi.fn()}
+              onClose={() => {
+                setOpen(false);
+              }}
+            />
+          ) : null}
+        </>
+      );
+    }
+    render(<Host />);
+    const opener = screen.getByRole('button', { name: 'PROBLEMS' });
+    opener.focus();
+    fireEvent.click(opener);
+    const close = screen.getByRole('button', { name: CLOSE_LABEL });
+    expect(document.activeElement).toBe(close);
+
+    fireEvent.keyDown(close, { key: 'Escape', code: 'Escape' });
+    expect(screen.queryByRole('button', { name: CLOSE_LABEL })).toBeNull();
+    expect(document.activeElement).toBe(opener);
   });
 });

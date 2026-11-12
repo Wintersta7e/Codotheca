@@ -137,6 +137,15 @@ describe('SurfaceHost', () => {
     });
   });
 
+  it('closes the scan summary from its own CLOSE control, without opening a project', () => {
+    const onCloseSummary = vi.fn();
+    const onOpenProject = vi.fn();
+    mount({ summaryOpen: true, problems, onCloseSummary, onOpenProject });
+    fireEvent.click(screen.getByRole('button', { name: 'CLOSE' }));
+    expect(onCloseSummary).toHaveBeenCalledTimes(1);
+    expect(onOpenProject).not.toHaveBeenCalled();
+  });
+
   it('draws the failure window only for a fact, and full screen when it does', () => {
     mount({ failure: null });
     expect(screen.queryByText(/THIS LIBRARY WAS WRITTEN BY A NEWER CODOTHECA/u)).toBeNull();

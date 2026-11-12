@@ -124,6 +124,7 @@ export function SurfaceHost(props: SurfaceHostProps): ReactElement {
             props.onOpenProject(id);
           }}
           onChanged={props.onProblemsChanged}
+          onClose={props.onCloseSummary}
         />
       )}
       {failure !== null && (

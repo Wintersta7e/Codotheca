@@ -11,12 +11,19 @@
  * the core. Nothing here recounts them from `groups` — two answers to one question is how the
  * header and the list below it come to disagree in the same frame.
  */
-import { useRef, useState } from 'react';
-import type { CSSProperties, ReactElement } from 'react';
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactElement,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import type { ProblemGroup, ProjectId, Problems, ScanProblemId } from '../../generated/protocol';
 import { ERROR_ACTION_LABEL } from '../errors/errorKind';
 import type { ErrorRequest } from '../errors/ErrorExplained';
+import { CLOSE_LABEL } from '../firstrun/copy';
 import {
   AMBIGUOUS_GROUP_NOTE,
   NO_PROBLEMS_HEADING,
@@ -39,6 +46,8 @@ export interface ScanSummaryProps {
   readonly request: ErrorRequest;
   readonly onOpenProject: (id: ProjectId) => void;
   readonly onChanged: () => void;
+  /** `CLOSE` and `Esc`. Focus then returns to whatever opened the summary. */
+  readonly onClose: () => void;
 }
 
 const headerStyle: CSSProperties = {
@@ -217,19 +226,72 @@ function GroupRows(props: {
 }
 
 export function ScanSummary(props: ScanSummaryProps): ReactElement {
-  const { problems, problemsDismissed = false, request, onOpenProject, onChanged } = props;
+  const { problems, problemsDismissed = false, request, onOpenProject, onChanged, onClose } = props;
   const clauses = summaryHeaderClauses(problems, problemsDismissed);
   const groups = problemsDismissed ? [] : problems.groups.filter((g) => g.items.length > 0);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
-  if (clauses === null) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-        <h2 style={emptyHeading}>{NO_SCAN_YET_HEADING}</h2>
-        <p style={detailStyle}>{NO_SCAN_YET_BODY}</p>
-      </div>
-    );
-  }
+  // Focus moves in on open, so `Esc` works at once, and goes back to the control that opened the
+  // summary when it unmounts — whichever way it closed.
+  useLayoutEffect(() => {
+    const opener = document.activeElement;
+    closeRef.current?.focus();
+    return () => {
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+    };
+  }, []);
 
+  // `Esc` closes the summary and nothing under it: the shelf's own `Esc` (close Peek) and the
+  // page's (back) listen on the window, which this event does not reach.
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.code !== 'Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    onClose();
+  };
+
+  return (
+    <div
+      style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+      onKeyDown={onKeyDown}
+      data-testid="sum-panel"
+    >
+      <button
+        ref={closeRef}
+        type="button"
+        style={{ ...outlineButton, alignSelf: 'flex-end' }}
+        onClick={onClose}
+      >
+        {CLOSE_LABEL}
+      </button>
+      {clauses === null ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+          <h2 style={emptyHeading}>{NO_SCAN_YET_HEADING}</h2>
+          <p style={detailStyle}>{NO_SCAN_YET_BODY}</p>
+        </div>
+      ) : (
+        <SummaryBody
+          clauses={clauses}
+          groups={groups}
+          problemsDismissed={problemsDismissed}
+          request={request}
+          onOpenProject={onOpenProject}
+          onChanged={onChanged}
+        />
+      )}
+    </div>
+  );
+}
+
+function SummaryBody(props: {
+  readonly clauses: NonNullable<ReturnType<typeof summaryHeaderClauses>>;
+  readonly groups: readonly ProblemGroup[];
+  readonly problemsDismissed: boolean;
+  readonly request: ErrorRequest;
+  readonly onOpenProject: (id: ProjectId) => void;
+  readonly onChanged: () => void;
+}): ReactElement {
+  const { clauses, groups, problemsDismissed, request, onOpenProject, onChanged } = props;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       <p data-testid="sum-header" style={headerStyle}>
