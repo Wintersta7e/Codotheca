@@ -427,3 +427,55 @@ fn the_last_progress_counts_every_project_the_library_holds_as_it_commits() {
     assert_eq!(project_rows(&r.index), 3);
     assert_eq!(last_indexed_projects(&r.events), 3);
 }
+
+/// A directory holding `n` empty subdirectories: enough to cross the walk's 512-directory
+/// progress interval.
+fn dirs_under(base: &Path, n: usize) {
+    for i in 0..n {
+        std::fs::create_dir_all(base.join(format!("d{i:04}"))).unwrap();
+    }
+}
+
+/// `walkedDirs` is a running count. Discoveries used to send `0` between the walk's counter
+/// frames, and a second root's counter restarted below the first root's total, so the first-run
+/// figure fell back as it went.
+#[test]
+fn walked_dirs_never_falls_and_carries_across_roots() {
+    let tree = tempfile::tempdir().unwrap();
+    let first = tree.path().join("first");
+    let second = tree.path().join("second");
+    dirs_under(&first, 600);
+    dirs_under(&second, 600);
+    for name in ["r0", "r1", "r2"] {
+        repo_at(&second, name);
+    }
+    let r = rig_with(&[&first, &second], shared_git(&second), |launcher| launcher);
+
+    r.scans.start(ScanMode::Full, NOW).unwrap();
+    await_idle(&r.scans);
+
+    let walked: Vec<i64> = r
+        .events
+        .named("scan", "progress")
+        .iter()
+        .map(|p| p["walkedDirs"].as_i64().unwrap())
+        .collect();
+    assert!(
+        walked.len() >= 4,
+        "two counter frames and three discoveries: {walked:?}"
+    );
+    assert!(
+        walked.windows(2).all(|w| w[0] <= w[1]),
+        "a progress frame lowered the walked count: {walked:?}"
+    );
+    let last = *walked.last().unwrap();
+    assert!(
+        last > 601,
+        "the second root's counter adds to the first root's 601 directories: {walked:?}"
+    );
+    let finished = r.events.named("scan", "finished");
+    assert!(
+        finished.first().unwrap()["walkedDirs"].as_i64().unwrap() >= last,
+        "the run's total is at least what progress last said"
+    );
+}

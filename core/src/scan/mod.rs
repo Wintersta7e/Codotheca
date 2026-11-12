@@ -131,8 +131,8 @@ pub enum WalkEvent {
     },
     /// The run's progress figures, which the launcher publishes as `ScanProgress`.
     Progress {
-        /// The current root's walk counter, or `0` when a discovery rather than the counter
-        /// raised the event.
+        /// Directories the run has walked: every earlier root's total plus the current root's
+        /// last counter frame. A discovery between frames carries the figure, never `0`.
         walked_dirs: u64,
         /// Repositories found so far, floored at the already-indexed count (see `scan::run`).
         found_repos: u64,

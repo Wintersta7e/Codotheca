@@ -185,20 +185,25 @@ impl ThreadScanLauncher {
                 walked_dirs,
                 found_repos,
             } => {
+                // The walk's threads race to this point, so a frame computed earlier can arrive
+                // later. Both counts only ever rise; the lock spans the emit so frames leave in
+                // the order their figures were settled.
                 let mut last = published.lock().unwrap_or_else(PoisonError::into_inner);
+                last.walked_dirs = last.walked_dirs.max(walked_dirs);
+                last.found_repos = last.found_repos.max(found_repos);
                 // Read as each frame goes out, so the headline moves as the hand-off commits
                 // projects. A failed read carries the last figure rather than publishing a
                 // count nobody measured.
                 if let Ok(count) = self.store.indexed_project_count() {
                     last.indexed_projects = clamp32(count);
                 }
-                progress.observe(walked_dirs, found_repos);
+                progress.observe(last.walked_dirs, last.found_repos);
                 self.emit(
                     "progress",
                     &ScanProgress {
                         run_id,
-                        walked_dirs: clamp64(walked_dirs),
-                        found_repos: clamp32(found_repos),
+                        walked_dirs: clamp64(last.walked_dirs),
+                        found_repos: clamp32(last.found_repos),
                         indexed_projects: last.indexed_projects,
                     },
                 );
@@ -254,6 +259,8 @@ impl ScanLauncher for ThreadScanLauncher {
         let run_id = launched.scan_run_id;
         let scan_run_id = begun.scan_run_id;
         let published = Mutex::new(Published {
+            walked_dirs: 0,
+            found_repos: 0,
             indexed_projects: clamp32(begun.resumed_from),
         });
         let worker = self.clone();
@@ -290,9 +297,12 @@ impl ScanLauncher for ThreadScanLauncher {
 
 /// What the run's last `progress` frame said, shared by the walk's worker threads.
 ///
+/// `walked_dirs` and `found_repos` never fall: a frame carrying less repeats the last figure.
 /// `indexed_projects` is the index's project count — the same figure `cancelled` reports — so a
 /// merge lowers it and a re-scan of a known library does not count its projects twice.
 struct Published {
+    walked_dirs: u64,
+    found_repos: u64,
     indexed_projects: u32,
 }
 
@@ -310,4 +320,67 @@ fn clamp32(value: u64) -> u32 {
 
 fn clamp64(value: u64) -> i64 {
     i64::try_from(value).unwrap_or(i64::MAX)
+}
+
+#[cfg(all(test, feature = "testkit"))]
+mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
+
+    use super::*;
+    use crate::jobs::NullJobSink;
+    use crate::testing::{
+        FakeClock, FakeGitBackend, FakeMountResolver, MemScanStore, ScanEventFake,
+    };
+
+    /// The walk's threads settle a frame and then publish it, so a frame settled first can
+    /// arrive second. No integration run can order that race on demand, so this hands the
+    /// publisher the arrival order the race produces.
+    #[test]
+    fn a_frame_arriving_late_never_lowers_a_count() {
+        let dir = tempfile::tempdir().unwrap();
+        let events = Arc::new(ScanEventFake::default());
+        let launcher = ThreadScanLauncher::new(ScanLauncherDeps {
+            store: Arc::new(MemScanStore::new()),
+            index: Arc::new(Mutex::new(Index::open(dir.path()).unwrap())),
+            git: Arc::new(FakeGitBackend::new()),
+            mounts: Arc::new(FakeMountResolver::new()),
+            clock: Arc::new(FakeClock::new(0)),
+            skip: Arc::new(SkipList::default()),
+            wsl: None,
+            jobs: Arc::new(NullJobSink),
+            events: events.clone(),
+        });
+        let published = Mutex::new(Published {
+            walked_dirs: 0,
+            found_repos: 0,
+            indexed_projects: 0,
+        });
+        let cell = ScanProgressCell::default();
+        for (walked_dirs, found_repos) in [(1024, 5), (512, 3)] {
+            launcher.publish_walk_event(
+                ScanRunId(1),
+                &published,
+                &cell,
+                WalkEvent::Progress {
+                    walked_dirs,
+                    found_repos,
+                },
+            );
+        }
+
+        let frames = events.named("scan", "progress");
+        let late = frames.last().unwrap();
+        assert_eq!(late["walkedDirs"], 1024);
+        assert_eq!(late["foundRepos"], 5);
+        assert_eq!(
+            cell.snapshot(),
+            (1024, 5),
+            "scan.status reads the same figures"
+        );
+    }
 }

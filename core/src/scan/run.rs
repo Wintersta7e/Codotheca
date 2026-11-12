@@ -421,6 +421,10 @@ impl ScanRunner<'_> {
                 cancelled = true;
                 break;
             }
+            // Each root's walk counts from zero, so a frame reports the roots already walked
+            // plus this root's latest counter. A discovery between counter frames carries it.
+            let walked_before = walked_dirs;
+            let walked_here = AtomicU64::new(0);
             let opts = WalkOptions {
                 descend_into_repos: entry.root.descend_into_repos,
                 // §4.2: bare candidates are only tested under explicitly enabled roots, and
@@ -474,13 +478,15 @@ impl ScanRunner<'_> {
                     }
                     sink(WalkEvent::Discovered(Box::new(discovered)));
                     sink(WalkEvent::Progress {
-                        walked_dirs: 0,
+                        walked_dirs: walked_before
+                            .saturating_add(walked_here.load(Ordering::Relaxed)),
                         found_repos: seen.max(resumed_from),
                     });
                 }
                 WalkEvent::Walked { dirs } => {
+                    let here = walked_here.fetch_max(dirs, Ordering::Relaxed).max(dirs);
                     sink(WalkEvent::Progress {
-                        walked_dirs: dirs,
+                        walked_dirs: walked_before.saturating_add(here),
                         found_repos: found_this_run.load(Ordering::Relaxed).max(resumed_from),
                     });
                 }
