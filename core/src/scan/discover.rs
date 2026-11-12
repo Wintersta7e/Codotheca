@@ -150,8 +150,9 @@ impl<'a> ProbeCtx<'a> {
         JobContext::new(JobClass::Background, self.cancel, Some(GIT_PROBE_TIMEOUT))
     }
 
-    /// `rev-parse` for one candidate. `None` when git could not answer; the caller reports it
-    /// and falls back rather than dropping the repository (criterion 5).
+    /// `rev-parse` for one candidate. `None` when git could not answer. A `.git` file falls back
+    /// to its pointer rather than dropping the repository (criterion 5), and the hand-off reports
+    /// it if it then cannot be indexed; a bare-shaped directory is reported here.
     fn facts(&self, repo: &RepoHandle) -> Option<RepoFacts> {
         self.git.repo_facts(repo, &self.job()).ok()
     }
@@ -242,16 +243,13 @@ fn classify_dot_git_file(
         .ok()
         .and_then(|repo| probe.facts(&repo));
 
+    // A failed probe is not itself a problem: the candidate goes on to the hand-off, which
+    // reports it once, with git's own error, if it cannot be indexed — and not at all if it can.
+    // Reporting it here as well counted one folder twice in §11.1's header.
     let (git_dir, common_dir, linked) = if let Some(facts) = probed {
         let linked = facts.is_linked_worktree();
         (facts.git_dir, facts.common_dir, linked)
     } else {
-        problem(
-            sink,
-            dir,
-            "rev-parse could not read this repository; classified from the gitdir pointer"
-                .to_owned(),
-        );
         let (git_dir, common_dir) = fallback_from_pointer(&pointer);
         let linked = git_dir != common_dir;
         (git_dir, common_dir, linked)

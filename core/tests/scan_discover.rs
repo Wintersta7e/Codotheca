@@ -21,7 +21,7 @@ use codotheca_core::cancel::CancelToken;
 use codotheca_core::git::{GitError, RepoFacts, StoreKey};
 use codotheca_core::mount::StoreClass;
 use codotheca_core::scan::discover::{classify_dir, parse_gitdir_pointer, ProbeCtx, RepoKind};
-use codotheca_core::scan::{ScanProblemKind, WalkEvent, WalkOptions};
+use codotheca_core::scan::{WalkEvent, WalkOptions};
 use codotheca_core::testing::{FakeGitBackend, GitReply};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -134,8 +134,11 @@ fn an_equal_common_dir_is_its_own_repository_not_a_worktree() {
 /// The pointer is built from the temp directory rather than written as `/x/.git/…`: a path with
 /// a leading separator and no drive prefix is absolute on Unix and **not** on Windows, so the
 /// literal fixture asserted one thing on one host and another on the other.
+///
+/// The walk reports nothing for it: the hand-off reports a candidate that cannot be indexed, so
+/// a row here as well counted one folder twice (`scan_problems.rs` asserts the one row).
 #[test]
-fn a_failed_probe_still_indexes_the_repository_and_explains_itself() {
+fn a_failed_probe_still_classifies_the_repository_and_leaves_the_report_to_the_hand_off() {
     let base = tempfile::tempdir().unwrap();
     let dir = base.path();
     let store = dir.join("store");
@@ -159,11 +162,7 @@ fn a_failed_probe_still_indexes_the_repository_and_explains_itself() {
     assert_eq!(found.kind, RepoKind::LinkedWorktree);
     assert_eq!(found.common_dir, store.join(".git"));
     let problems = problems.into_inner().unwrap();
-    assert_eq!(problems.len(), 1);
-    assert_eq!(
-        problems.first().map(|p| p.kind),
-        Some(ScanProblemKind::UnreadableRepo)
-    );
+    assert_eq!(problems.len(), 0, "{problems:?}");
 }
 
 #[test]
