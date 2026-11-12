@@ -11,9 +11,10 @@
  * the core. Nothing here recounts them from `groups` — two answers to one question is how the
  * header and the list below it come to disagree in the same frame.
  */
+import { useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 
-import type { LocationId, ProblemGroup, ProjectId, Problems } from '../../generated/protocol';
+import type { ProblemGroup, ProjectId, Problems, ScanProblemId } from '../../generated/protocol';
 import { ERROR_ACTION_LABEL } from '../errors/errorKind';
 import type { ErrorRequest } from '../errors/ErrorExplained';
 import {
@@ -109,6 +110,56 @@ const emptyHeading: CSSProperties = {
   color: 'var(--text-2, #b6c1cb)',
 };
 
+/**
+ * The button the row is about to lose takes focus with it, so focus goes to a neighbouring
+ * control in the summary first — the next one, else the one before — never to the document body.
+ */
+function focusNeighbour(button: HTMLButtonElement | null): void {
+  const scope = button?.closest('section')?.parentElement;
+  if (!button || !scope) return;
+  const controls = Array.from(scope.querySelectorAll('button')).filter(
+    (b) => b !== button && b.getAttribute('aria-disabled') !== 'true',
+  );
+  const after = controls.find(
+    (b) => (button.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+  );
+  (after ?? controls.at(-1))?.focus();
+}
+
+/**
+ * §11.1's TRUST THIS REPOSITORY, keyed by the scan problem: an untrusted folder has no location
+ * row to name. `problems.trust` is not idempotent, so a second press while the first is in
+ * flight sends nothing.
+ */
+function TrustButton(props: {
+  readonly problemId: ScanProblemId;
+  readonly request: ErrorRequest;
+  readonly onChanged: () => void;
+}): ReactElement {
+  const { problemId, request, onChanged } = props;
+  const [pending, setPending] = useState(false);
+  const self = useRef<HTMLButtonElement>(null);
+  const trust = (): void => {
+    if (pending) return;
+    setPending(true);
+    void request('problems.trust', { problemId }).then(
+      () => {
+        focusNeighbour(self.current);
+        onChanged();
+      },
+      () => {
+        setPending(false);
+        onChanged();
+      },
+    );
+  };
+  return (
+    <button ref={self} type="button" style={outlineButton} aria-disabled={pending} onClick={trust}>
+      {ERROR_ACTION_LABEL.trust}
+    </button>
+  );
+}
+
 function GroupRows(props: {
   readonly group: ProblemGroup;
   readonly request: ErrorRequest;
@@ -116,9 +167,6 @@ function GroupRows(props: {
   readonly onChanged: () => void;
 }): ReactElement {
   const { group, request, onOpenProject, onChanged } = props;
-  const trust = (locationId: LocationId): void => {
-    void request('locations.setTrusted', { locationId }).then(onChanged, onChanged);
-  };
   return (
     <section
       data-testid={`sum-group-${group.kind}`}
@@ -135,7 +183,7 @@ function GroupRows(props: {
       {group.items.map((item, index) => {
         const detail = summaryDetailLine(group.kind, item);
         const projectId = item.projectId;
-        const locationId = item.locationId;
+        const problemId = item.problemId;
         return (
           <div
             key={`${item.pathDisplay}:${String(index)}`}
@@ -147,16 +195,8 @@ function GroupRows(props: {
                 {detail}
               </span>
             ) : null}
-            {group.kind === 'untrusted_repo' && locationId !== null ? (
-              <button
-                type="button"
-                style={outlineButton}
-                onClick={() => {
-                  trust(locationId);
-                }}
-              >
-                {ERROR_ACTION_LABEL.trust}
-              </button>
+            {group.kind === 'untrusted_repo' && problemId !== null ? (
+              <TrustButton problemId={problemId} request={request} onChanged={onChanged} />
             ) : null}
             {group.kind === 'ambiguous_lineage' && projectId !== null ? (
               <button

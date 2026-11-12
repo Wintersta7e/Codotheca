@@ -50,11 +50,15 @@ interface Drawn {
   readonly onChanged: ReturnType<typeof vi.fn>;
 }
 
-function draw(problems: Problems, problemsDismissed = false): Drawn {
+function draw(
+  problems: Problems,
+  problemsDismissed = false,
+  answer: () => Promise<unknown> = () => Promise.resolve({}),
+): Drawn {
   const calls: { name: string; args: unknown }[] = [];
   const request = vi.fn((name: string, args: unknown) => {
     calls.push({ name, args });
-    return Promise.resolve({} as never);
+    return answer();
   }) as unknown as ErrorRequest;
   const onOpenProject = vi.fn();
   const onChanged = vi.fn();
@@ -71,7 +75,7 @@ function draw(problems: Problems, problemsDismissed = false): Drawn {
 }
 
 const untrusted = group('untrusted_repo', [
-  item({ pathDisplay: '/w/borrowed', detail: 'dubious ownership', projectId: 4, locationId: 11 }),
+  item({ pathDisplay: '/w/borrowed', detail: 'dubious ownership', problemId: 31 }),
 ]);
 
 const ambiguous = group('ambiguous_lineage', [
@@ -140,13 +144,74 @@ describe('the groups', () => {
 });
 
 describe('the two controls, and the one that does not exist', () => {
-  it('trusts one repository through locations.setTrusted and nothing else', async () => {
+  it('trusts an untrusted row by its problem id through problems.trust and nothing else', async () => {
     const { calls, onChanged } = draw(payload([untrusted]));
     fireEvent.click(screen.getByRole('button', { name: 'TRUST THIS REPOSITORY' }));
-    expect(calls).toEqual([{ name: 'locations.setTrusted', args: { locationId: 11 } }]);
+    expect(calls).toEqual([{ name: 'problems.trust', args: { problemId: 31 } }]);
     await waitFor(() => {
       expect(onChanged).toHaveBeenCalled();
     });
+  });
+
+  it('draws no TRUST on an untrusted row the core cannot find again, location or not', () => {
+    draw(payload([group('untrusted_repo', [item({ pathDisplay: '/w/x', locationId: 11 })])]));
+    expect(screen.getByText('/w/x')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'TRUST THIS REPOSITORY' })).toBeNull();
+  });
+
+  it('sends one problems.trust however often it is pressed while the first is in flight', () => {
+    const { calls } = draw(payload([untrusted]), false, () => new Promise(() => undefined));
+    const button = screen.getByRole('button', { name: 'TRUST THIS REPOSITORY' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(calls).toHaveLength(1);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('hands focus to the next control before the trusted row leaves, else the one before', async () => {
+    const two = group('untrusted_repo', [
+      item({ pathDisplay: '/w/a', problemId: 31 }),
+      item({ pathDisplay: '/w/b', problemId: 32 }),
+    ]);
+    draw(payload([two, ambiguous]));
+    const [first, second] = screen.getAllByRole('button', { name: 'TRUST THIS REPOSITORY' });
+    if (!first || !second) throw new Error('two TRUST buttons');
+    const open = screen.getByRole('button', { name: 'OPEN PROJECT' });
+    first.focus();
+    fireEvent.click(first);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(second);
+    });
+    second.focus();
+    fireEvent.click(second);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(open);
+    });
+    cleanup();
+
+    draw(payload([ambiguous, untrusted]));
+    const last = screen.getByRole('button', { name: 'TRUST THIS REPOSITORY' });
+    last.focus();
+    fireEvent.click(last);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'OPEN PROJECT' }));
+    });
+  });
+
+  it('keeps focus and re-arms the button when the core refuses', async () => {
+    const { calls, onChanged } = draw(payload([untrusted]), false, () =>
+      Promise.reject(new Error('refused')),
+    );
+    const button = screen.getByRole('button', { name: 'TRUST THIS REPOSITORY' });
+    button.focus();
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(onChanged).toHaveBeenCalled();
+    });
+    expect(document.activeElement).toBe(button);
+    expect(button.getAttribute('aria-disabled')).toBe('false');
+    fireEvent.click(button);
+    expect(calls).toHaveLength(2);
   });
 
   it('gives an ambiguous row OPEN PROJECT, the note and both candidate names (criterion 2)', () => {
