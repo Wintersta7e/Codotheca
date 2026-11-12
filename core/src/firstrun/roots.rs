@@ -263,7 +263,7 @@ enum Reach {
 ///
 /// The reachability fact is §4.6's `location.presence`, which a run sets to `offline` when the
 /// copy's store was not among the stores its roots reached — the root probe and the mount
-/// resolver's answer, persisted. The count is the live (not merged, not removed) projects with a
+/// resolver's answer, persisted. The count is the live (not merged, not removed, not hidden) projects with a
 /// present-day copy under the root, valid once the most recent completed, uncancelled run listed
 /// the root enabled in `scan_run.roots_json`.
 fn reach(
@@ -284,12 +284,15 @@ fn reach(
         |r| r.get(0),
     )?;
     let mut stmt = conn.prepare(&format!(
-        "SELECT l.project_id, l.path_key, l.presence
+        "SELECT l.project_id, l.path_key, l.presence, p.is_hidden
            FROM location l JOIN project p ON p.id = l.project_id
           WHERE l.kind = ?1 AND l.distro = ?2 AND l.removed_at IS NULL
             AND p.merged_into IS NULL AND {IS_CURRENT_SQL}"
     ))?;
-    let mut projects = BTreeSet::new();
+    // A hidden project leaves the count (§46.12) but its copy is still evidence the store was
+    // reached, so it keeps an all-hidden root out of `Uncounted` and joins the offline test.
+    let mut indexed = false;
+    let mut shown = BTreeSet::new();
     let mut all_offline = true;
     let mut rows = stmt.query(rusqlite::params![kind, distro])?;
     while let Some(row) = rows.next()? {
@@ -297,15 +300,18 @@ fn reach(
         if !crate::paths::is_under(&key, root_key) {
             continue;
         }
-        projects.insert(row.get::<_, i64>(0)?);
+        indexed = true;
+        if row.get::<_, i64>(3)? == 0 {
+            shown.insert(row.get::<_, i64>(0)?);
+        }
         all_offline &= row.get::<_, String>(2)? == "offline";
     }
-    Ok(if projects.is_empty() {
+    Ok(if !indexed {
         Reach::Uncounted
     } else if all_offline {
         Reach::Offline
     } else if walked {
-        Reach::Counted(u32::try_from(projects.len()).unwrap_or(u32::MAX))
+        Reach::Counted(u32::try_from(shown.len()).unwrap_or(u32::MAX))
     } else {
         Reach::Uncounted
     })
@@ -626,6 +632,37 @@ mod tests {
         assert!(set_enabled(conn, id, false).unwrap());
         let off = root_row(conn, id).unwrap().unwrap();
         assert_eq!((off.state, off.project_count), (RootState::Ignored, None));
+    }
+
+    // §46.12 / §8.0b: a hidden project leaves every count, the root's included. It still sits
+    // in a store the walk reached, so a root holding only hidden projects is a counted zero.
+    #[test]
+    fn a_hidden_project_leaves_its_roots_count() {
+        let (_dir, index) = open();
+        let conn = index.conn();
+        let skip = SkipList::default();
+        let cache = SuggestionCache::new();
+        let root = add_root(conn, &params("/home/u/dev", false, &skip, &cache))
+            .unwrap()
+            .root
+            .unwrap();
+        seed_found_project(conn, "/home/u/dev/a");
+        seed_found_project(conn, "/home/u/dev/b");
+        let id = root.id.0;
+        finished_run(conn, &format!("[{{\"id\":{id},\"enabled\":true}}]"), false);
+        assert_eq!(root_row(conn, id).unwrap().unwrap().project_count, Some(2));
+
+        conn.execute("UPDATE project SET is_hidden = 1 WHERE id = 2", [])
+            .unwrap();
+        assert_eq!(root_row(conn, id).unwrap().unwrap().project_count, Some(1));
+
+        conn.execute("UPDATE project SET is_hidden = 1 WHERE id = 1", [])
+            .unwrap();
+        let all_hidden = root_row(conn, id).unwrap().unwrap();
+        assert_eq!(
+            (all_hidden.state, all_hidden.project_count),
+            (RootState::Watched, Some(0))
+        );
     }
 
     // §17: phase 1 has no destructive operation. Removing a root removes a scan_root row and
