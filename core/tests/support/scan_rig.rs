@@ -62,7 +62,8 @@ pub(crate) struct Scanned {
     pub(crate) locations: Vec<(String, String)>,
     /// The index the scan wrote, for what reads its rows next.
     pub(crate) index: Arc<Mutex<Index>>,
-    _dir: tempfile::TempDir,
+    /// The index's directory when the rig made it; `None` when the caller keeps its own.
+    _dir: Option<tempfile::TempDir>,
 }
 
 /// One full scan of `root`, with `repo`'s git underneath.
@@ -74,6 +75,34 @@ pub(crate) fn scan(repo: &TestRepo, root: &Path) -> Scanned {
 pub(crate) fn scan_with(exec: GitExec, root: &Path) -> Scanned {
     let dir = tempfile::tempdir().unwrap();
     let index = Arc::new(Mutex::new(Index::open(dir.path()).unwrap()));
+    Scanned {
+        _dir: Some(dir),
+        ..scan_into(exec, root, &index)
+    }
+}
+
+/// The mount table every scan here runs under: `root` is one local store, `store-a`.
+pub(crate) fn mounts_for(root: &Path) -> FakeMountResolver {
+    let mounts = FakeMountResolver::new();
+    mounts.map(
+        root,
+        MountFacts {
+            store_key: "store-a".to_owned(),
+            volume_key: Some("vol-a".to_owned()),
+            class: StoreClass::Local,
+        },
+    );
+    mounts
+}
+
+/// [`scan`] into an index the caller keeps, so a later command can read what it recorded.
+/// Adds `root` as an enabled `scan_root` first.
+pub(crate) fn scan_in(repo: &TestRepo, root: &Path, index: &Arc<Mutex<Index>>) -> Scanned {
+    scan_into(repo.exec(), root, index)
+}
+
+/// [`scan_in`], running git through `exec`.
+fn scan_into(exec: GitExec, root: &Path, index: &Arc<Mutex<Index>>) -> Scanned {
     index
         .lock()
         .unwrap()
@@ -90,22 +119,14 @@ pub(crate) fn scan_with(exec: GitExec, root: &Path) -> Scanned {
             ],
         )
         .unwrap();
-    let store = Arc::new(SqliteScanStore::new(Arc::clone(&index)));
-    let mounts = FakeMountResolver::new();
-    mounts.map(
-        root,
-        MountFacts {
-            store_key: "store-a".to_owned(),
-            volume_key: Some("vol-a".to_owned()),
-            class: StoreClass::Local,
-        },
-    );
+    let store = Arc::new(SqliteScanStore::new(Arc::clone(index)));
+    let mounts = mounts_for(root);
     let clock = Arc::new(FakeClock::new(NOW));
     let events = Arc::new(ScanEventFake::default());
     let jobs = Arc::new(RecordingJobs::default());
     let launcher = Arc::new(ThreadScanLauncher::new(ScanLauncherDeps {
         store: store.clone(),
-        index: Arc::clone(&index),
+        index: Arc::clone(index),
         git: Arc::new(SystemGit::new(
             Arc::new(exec),
             Arc::new(GitSlots::new(4)),
@@ -154,7 +175,7 @@ pub(crate) fn scan_with(exec: GitExec, root: &Path) -> Scanned {
         problems,
         indexed,
         locations,
-        index,
-        _dir: dir,
+        index: Arc::clone(index),
+        _dir: None,
     }
 }

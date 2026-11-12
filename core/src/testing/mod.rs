@@ -17,7 +17,7 @@ mod tokens;
 pub mod wsl;
 pub mod zone;
 
-pub use assembly::{core_handler, CoreHandlerParts};
+pub use assembly::{core_handler, core_handler_with, CoreHandlerParts};
 pub use bins::{CountingTrash, FixedBinSettings};
 pub use clock::FakeClock;
 pub use git::{FakeGitBackend, GitReply, RecordedGitCall, RecordingGitBackend};

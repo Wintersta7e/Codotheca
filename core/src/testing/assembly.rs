@@ -5,7 +5,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use crate::assembly::{CoreDeps, CoreHandler};
+use crate::git::GitBackend;
 use crate::index::Index;
+use crate::mount::MountResolver;
 use crate::proto::pubsub::{Publisher, PublisherSink};
 use crate::scan::ScanLauncher;
 use crate::testing::zone::FixedZone;
@@ -38,6 +40,29 @@ pub fn core_handler(
     now: i64,
     launcher: Arc<dyn ScanLauncher>,
 ) -> CoreHandlerParts {
+    core_handler_with(
+        dir,
+        index,
+        now,
+        launcher,
+        Arc::new(crate::testing::FakeGitBackend::new()),
+        Arc::new(crate::testing::FakeMountResolver::default()),
+    )
+}
+
+/// [`core_handler`] whose command arms run `git` and resolve through `mount`.
+///
+/// For a command that must run real git against a real folder (`problems.trust`). The job
+/// pump keeps the fake: what a command queues is not what such a test observes.
+#[must_use]
+pub fn core_handler_with(
+    dir: &Path,
+    index: &Arc<Mutex<Index>>,
+    now: i64,
+    launcher: Arc<dyn ScanLauncher>,
+    git: Arc<dyn GitBackend>,
+    mount: Arc<dyn MountResolver>,
+) -> CoreHandlerParts {
     let events = Arc::new(PublisherSink::new(Publisher::detached()));
     let clock = Arc::new(FakeClock::new(now));
     let http: Arc<dyn crate::http::HttpTransport> = Arc::new(crate::testing::FakeTransport::new());
@@ -56,12 +81,12 @@ pub fn core_handler(
         http,
         client_id: "test-client-id".to_owned(),
         clock: clock.clone(),
-        git: Arc::new(crate::testing::FakeGitBackend::new()),
+        git,
         write_git: Arc::new(crate::testing::FakeMutatingGit::new(
             crate::testing::CloneBehaviour::Succeed,
         )),
         trash: Arc::new(crate::testing::CountingTrash::new()),
-        mount: Arc::new(crate::testing::FakeMountResolver::default()),
+        mount,
         spawner: Box::new(crate::launch::spawn::RecordingSpawner::new()),
         sessions: crate::session::manager::SessionManager::new(
             clock.clone(),
