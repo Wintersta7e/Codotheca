@@ -1054,6 +1054,93 @@ mod corehandler {
         );
     }
 
+    /// GA39: the shell replaces its whole store with this snapshot, and its evaluator applies
+    /// §8.0b's base predicate itself — so the snapshot holds the hidden, reference and excluded
+    /// rows the bare `projects.list` drops, or `is:hidden` finds nothing after a re-subscribe.
+    #[test]
+    fn the_projects_snapshot_holds_every_flagged_row_the_bare_list_drops() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let index = Arc::new(std::sync::Mutex::new(
+            codotheca_core::index::Index::open_at(dir.path(), NOW).expect("index opens"),
+        ));
+        {
+            let mut guard = index.lock().expect("index");
+            guard
+                .with_tx(|tx| {
+                    for (name, hidden, reference, excluded) in [
+                        ("plain", 0, 0, None),
+                        ("hidden", 1, 0, None),
+                        ("reference", 0, 1, None),
+                        ("excluded", 0, 0, Some(1)),
+                        ("hidden-excluded", 1, 0, Some(1)),
+                    ] {
+                        tx.execute(
+                            "INSERT INTO project (name, seed_basename, created_at, updated_at,
+                                                  is_hidden, is_reference)
+                             VALUES (?1, ?1, ?2, ?2, ?3, ?4)",
+                            rusqlite::params![name, NOW, hidden, reference],
+                        )?;
+                        let id = tx.last_insert_rowid();
+                        if let Some(flag) = excluded {
+                            let path = format!("/r/{name}");
+                            tx.execute(
+                                "INSERT INTO location (project_id, kind, distro, path_bytes,
+                                     path_key, path_display, volume_key, store_key, presence,
+                                     repo_kind, excluded)
+                                 VALUES (?1, 'linux', '', CAST(?2 AS BLOB), CAST(?2 AS BLOB),
+                                         ?2, 'v', 's', 'present', 'worktree', ?3)",
+                                rusqlite::params![id, path, flag],
+                            )?;
+                        }
+                    }
+                    Ok(())
+                })
+                .expect("seeded");
+        }
+        let events = Arc::new(PublisherSink::new(Publisher::detached()));
+        let clock = Arc::new(codotheca_core::testing::FakeClock::new(NOW));
+        let mut h = handler_over(
+            dir.path(),
+            &index,
+            &events,
+            &clock,
+            Arc::new(codotheca_core::testing::FakeTransport::new()),
+            Arc::new(codotheca_core::testing::FakeTokenStore::unavailable()),
+        );
+
+        let bare = h
+            .handle("projects.list", serde_json::json!({}))
+            .expect("projects.list answered");
+        let snap = h.snapshot(Topic::Projects);
+        let names = |v: &serde_json::Value| {
+            let mut n: Vec<String> = v["rows"]
+                .as_array()
+                .expect("rows")
+                .iter()
+                .map(|r| r["name"].as_str().expect("name").to_owned())
+                .collect();
+            n.sort();
+            n
+        };
+        eprintln!("bare {:?} snapshot {:?}", names(&bare), names(&snap));
+        assert_eq!(
+            names(&bare),
+            ["plain"],
+            "the bare list drops every flagged row"
+        );
+        assert_eq!(
+            names(&snap),
+            [
+                "excluded",
+                "hidden",
+                "hidden-excluded",
+                "plain",
+                "reference"
+            ]
+        );
+        assert_eq!(snap["generation"], bare["generation"]);
+    }
+
     /// **R94's first side, over the real runner.** `projects.get` and `projects.peek` reach
     /// `SyncSink::on_project_visible` while `Assembly` holds the process's one index guard, and
     /// `std::sync::Mutex` is not reentrant — a sink that locked it again would wedge the guard for

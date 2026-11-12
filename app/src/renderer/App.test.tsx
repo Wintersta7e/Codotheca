@@ -368,8 +368,15 @@ describe('App — the composition root', () => {
       expect(document.querySelector('.cdt-shelf')).not.toBeNull();
     });
     for (const command of ['projects.list', 'scan.status', 'view.get'] as const) {
-      expect(fake.calls.filter((call) => call.name === command)).toHaveLength(1);
+      // One library read is the bare list plus its seven flagged reads (GA39), once each.
+      const reads = fake.calls.filter(
+        (call) =>
+          call.name === command &&
+          (command !== 'projects.list' || (call.args as { query: unknown }).query === null),
+      );
+      expect(reads).toHaveLength(1);
     }
+    expect(fake.calls.filter((call) => call.name === 'projects.list')).toHaveLength(8);
   });
 
   it('draws §1.4 card in §8.0 slot when the seeded set has not been confirmed', async () => {

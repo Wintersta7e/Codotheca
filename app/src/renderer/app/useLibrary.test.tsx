@@ -6,6 +6,11 @@ import type { Job, JobDone, ProjectId, ProjectPage, ProjectRow } from '../../gen
 import type { RendererEvent } from '../../shared/channels';
 import { makeProjectRow } from '../testing/projectRow';
 import type { AppDeps } from './deps';
+import { parseQuery } from '../../shared/query/parse';
+import { attentionCounts, shelfCounts } from '../shelf/counts';
+import { evaluateQuery } from '../shelf/evaluate';
+import { turnCountsOf } from './FirstRunHost';
+import { buildQueryContext } from './queryContext';
 import { fakeAppDeps, type FakeAppDeps } from './testDeps';
 import { AUTHORSHIP_REREAD_MS, useLibrary, type LibraryState } from './useLibrary';
 
@@ -54,10 +59,76 @@ const jobDone = (job: Job, projectId: number): RendererEvent => ({
   } satisfies JobDone,
 });
 
-const lists = (fake: FakeAppDeps): number =>
-  fake.calls.filter((call) => call.name === 'projects.list').length;
+/** One reload is one bare `projects.list`; the flagged reads ride beside it (GA39). */
+const isBareList = (call: { name: string; args: unknown }): boolean =>
+  call.name === 'projects.list' && (call.args as { query: string | null }).query === null;
+
+const lists = (fake: FakeAppDeps): number => fake.calls.filter(isBareList).length;
 
 describe('useLibrary', () => {
+  it('GA39: a reload holds the hidden, reference and excluded rows the bare list leaves out', async () => {
+    // The core's bare answer drops every flagged row (`in_base_set`); the evaluator applies the
+    // base predicate itself, so the store must hold them or `is:hidden` finds nothing.
+    const visible = [row(1, { authoredByUser: true }), row(2, { authoredByUser: true })];
+    const byQuery: Readonly<Record<string, readonly ProjectRow[]>> = {
+      'is:hidden': [row(3, { isHidden: true, authoredByUser: true, interruptedOp: 'rebase' })],
+      'is:reference': [
+        row(4, { isReference: true, authoredByUser: false, interruptedOp: 'merge' }),
+      ],
+      'is:excluded': [row(5, { isExcluded: true, authoredByUser: true })],
+      // Flags AND-combine, so a row carrying two answers only the query naming both.
+      'is:hidden is:excluded': [row(6, { isHidden: true, isExcluded: true })],
+    };
+    const fake = fakeAppDeps({
+      'projects.list': ({ query }) => page(query === null ? visible : (byQuery[query] ?? [])),
+    });
+    const view = mount(fake);
+    await waitFor(() => {
+      expect(
+        view
+          .last()
+          .rows?.map((r) => r.id)
+          .sort(),
+      ).toEqual([1, 2, 3, 4, 5, 6]);
+    });
+
+    const rows = view.last().rows ?? [];
+    const ctx = buildQueryContext({ rows, now: 0, firstRunCompletedAt: null });
+    const ids = (q: string): number[] =>
+      evaluateQuery(rows, parseQuery(q), ctx)
+        .rows.map((r) => r.id)
+        .sort();
+    expect(ids('is:hidden')).toEqual([3]);
+    expect(ids('is:excluded')).toEqual([5]);
+    expect(ids('is:hidden is:excluded')).toEqual([6]);
+    expect(ids('is:reference')).toEqual([4]);
+    expect(ids('')).toEqual([1, 2]);
+    // Every count reads what the bare list plus its reference tail said, never a flagged row.
+    expect(shelfCounts(rows, 2)).toEqual({
+      matched: 2,
+      total: 2,
+      reference: 1,
+      classified: 3,
+      classificationKnown: true,
+    });
+    const shelfOnly = rows.filter((r) => r.id <= 2 || r.id === 4);
+    expect(attentionCounts(rows, ctx)).toEqual(attentionCounts(shelfOnly, ctx));
+    expect(turnCountsOf(rows, ctx).interrupted).toBe(0);
+    expect(view.last().presence).toBe('present');
+  });
+
+  it('GA39: a library holding only hidden rows is still empty, as the bare list says', async () => {
+    const fake = fakeAppDeps({
+      'projects.list': ({ query }) =>
+        page(query === 'is:hidden' ? [row(3, { isHidden: true })] : []),
+    });
+    const view = mount(fake);
+    await waitFor(() => {
+      expect(view.last().rows).toHaveLength(1);
+    });
+    expect(view.last().presence).toBe('empty');
+  });
+
   it('holds null before the first answer and an empty array after an empty one', async () => {
     // Two different sentences. `null` is *the core has not answered*; `[]` is *no projects*,
     // which is what drives §8.3a's empty state. Collapsing them renders unknown as zero.
@@ -99,7 +170,7 @@ describe('useLibrary', () => {
     });
     const view = mount(fake);
     await waitFor(() => {
-      expect(fake.calls).toHaveLength(1);
+      expect(fake.calls.filter(isBareList)).toHaveLength(1);
     });
     expect(view.last().presence).toBe('uncomputed');
   });
@@ -192,7 +263,7 @@ describe('useLibrary', () => {
   it('reload asks the core again', async () => {
     let generation = 1;
     const fake = fakeAppDeps({
-      'projects.list': () => page([row(1)], (generation += 1)),
+      'projects.list': ({ query }) => page([row(1)], query === null ? (generation += 1) : 0),
     });
     const view = mount(fake);
     await waitFor(() => {
@@ -205,7 +276,7 @@ describe('useLibrary', () => {
     await waitFor(() => {
       expect(view.last().generation).toBe(3);
     });
-    expect(fake.calls.filter((call) => call.name === 'projects.list')).toHaveLength(2);
+    expect(fake.calls.filter(isBareList)).toHaveLength(2);
   });
 
   it('re-reads the projection when a scan run ends, because no projects event announces a walk', async () => {
@@ -226,7 +297,7 @@ describe('useLibrary', () => {
     await waitFor(() => {
       expect(view.last().rows).toHaveLength(2);
     });
-    expect(fake.calls.filter((call) => call.name === 'projects.list')).toHaveLength(2);
+    expect(fake.calls.filter(isBareList)).toHaveLength(2);
   });
 
   it('re-reads on a cancelled run too, which still wrote every project it reached', async () => {
@@ -252,14 +323,14 @@ describe('useLibrary', () => {
     const fake = fakeAppDeps({ 'projects.list': () => page([]) });
     mount(fake);
     await waitFor(() => {
-      expect(fake.calls).toHaveLength(1);
+      expect(fake.calls.filter(isBareList)).toHaveLength(1);
     });
     act(() => {
       fake.emit({ topic: 'scan', event: 'progress', data: { walkedDirs: 10 } });
       fake.emit({ topic: 'scan', event: 'repo_found', data: {} });
       fake.emit({ topic: 'scan', event: 'run_started', data: {} });
     });
-    expect(fake.calls.filter((call) => call.name === 'projects.list')).toHaveLength(1);
+    expect(fake.calls.filter(isBareList)).toHaveLength(1);
   });
 
   // §38.7.3, `hs:H9`. J1.5 writes `authored_by_user` per repository after the walk has ended,
@@ -320,7 +391,7 @@ describe('useLibrary', () => {
     });
     const view = mount(fake);
     await waitFor(() => {
-      expect(fake.calls).toHaveLength(1);
+      expect(fake.calls.filter(isBareList)).toHaveLength(1);
     });
     // Still `null`. A failed read that rendered `[]` would say "no repositories" about a
     // library the app could not read — the sharpest form of unknown-as-zero.

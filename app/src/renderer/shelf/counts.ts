@@ -44,8 +44,10 @@ export function shelfCounts(rows: readonly ShelfRow[], matchedCount: number): Sh
   let classified = 0;
   let classificationKnown = false;
   for (const row of rows) {
+    // GA39: the store holds hidden and excluded rows; none of them is in any count here.
+    if (!isOnShelf(row)) continue;
     if (row.isReference) reference += 1;
-    else if (isOnShelf(row)) total += 1;
+    else total += 1;
     if (row.authoredByUser !== null) {
       classificationKnown = true;
       classified += 1;

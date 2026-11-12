@@ -37,6 +37,7 @@ import type { ResolvedTier } from '../motion/tier.js';
 import { attentionCounts } from '../shelf/counts.js';
 import type { QueryContext } from '../shelf/evaluate.js';
 import type { ShelfRow } from '../shelf/row.js';
+import { isOnShelf } from '../shelf/visibility.js';
 import type { AppDeps } from './deps.js';
 import { buildQueryContext } from './queryContext.js';
 
@@ -104,7 +105,10 @@ export function turnCountsOf(rows: readonly ShelfRow[], ctx: QueryContext): Turn
     dirty: counts['uncommitted'] ?? 0,
     // §8.0b has no interrupted chip, so this one predicate is counted here. It is the flag the
     // row already carries, not a second reading of git.
-    interrupted: rows.filter((row) => row.interruptedOp !== null).length,
+    // GA39: the store holds hidden and excluded rows, which no count includes.
+    interrupted: rows.filter(
+      (row) => isOnShelf(row) && !row.isReference && row.interruptedOp !== null,
+    ).length,
     total: counts['all'] ?? 0,
   };
 }
@@ -180,7 +184,7 @@ export function FirstRunHost(props: FirstRunHostProps): ReactElement {
       nowSecs: now(),
       // `null` is *not classified yet*. A zero here would claim a finished pass found none.
       referenceCount: rows.some((row) => row.authoredByUser !== null)
-        ? rows.filter((row) => row.isReference).length
+        ? rows.filter((row) => row.isReference && isOnShelf(row)).length
         : null,
       project: (id: ProjectId): RevealProject | null => {
         const row = rowsById.get(id);

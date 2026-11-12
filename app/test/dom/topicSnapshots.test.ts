@@ -59,7 +59,8 @@ it('the projects snapshot batch replaces the shelf without another read', async 
 
   expect(result.current.rows?.map((row) => row.name)).toEqual(['alpha', 'beta']);
   expect(result.current.generation).toBe(7);
-  expect(shell.calls.map((call) => call.name)).toEqual(['projects.list']);
+  // The mount's one library read (the bare list plus its seven flagged reads, GA39), no other.
+  expect(shell.calls.map((call) => call.name)).toEqual(Array(8).fill('projects.list'));
 });
 
 it('the sync snapshot batch becomes the status, its listing and its notice', () => {
@@ -106,5 +107,6 @@ it('the batch a projects gap ends in recovers the shelf without another read', a
     ['beta', null, true],
   ]);
   expect(result.current.generation).toBe(4);
-  expect(shell.calls.map((call) => call.name)).toEqual(['projects.list']);
+  // The mount's one library read (the bare list plus its seven flagged reads, GA39), no other.
+  expect(shell.calls.map((call) => call.name)).toEqual(Array(8).fill('projects.list'));
 });

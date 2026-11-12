@@ -208,8 +208,13 @@ function mount(contentScanEnabled = true): FakeAppDeps {
   return fake;
 }
 
+/** A library read is one bare `projects.list` and seven flagged ones (GA39); count the bare. */
 const count = (fake: FakeAppDeps, name: string): number =>
-  fake.calls.filter((call) => call.name === name).length;
+  fake.calls.filter(
+    (call) =>
+      call.name === name &&
+      (name !== 'projects.list' || (call.args as { query: unknown }).query === null),
+  ).length;
 
 async function openHealthTab(): Promise<void> {
   await waitFor(() => {

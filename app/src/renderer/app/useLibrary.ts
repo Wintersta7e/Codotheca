@@ -19,6 +19,8 @@ import type { RendererEvent } from '../../shared/channels.js';
 import type { LibraryPresence } from '../shelf/EmptyState.js';
 import { ProjectionStore } from '../shelf/projection.js';
 import type { ShelfRow } from '../shelf/row.js';
+import { isOnShelf } from '../shelf/visibility.js';
+import { LIBRARY_READS } from './libraryReads.js';
 import type { AppDeps } from './deps.js';
 
 export interface LibraryState {
@@ -152,13 +154,18 @@ export function useLibrary(deps: AppDeps): LibraryState {
   );
 
   const reload = useCallback(() => {
-    void request('projects.list', { query: null, sort: null, window: null }).then(
-      (result: ProjectPage) => {
+    const read = (query: string | null): Promise<ProjectPage> =>
+      request('projects.list', { query, sort: null, window: null });
+    void Promise.all(LIBRARY_READS.map(read)).then(
+      (pages: readonly ProjectPage[]) => {
         if (!live.current) return;
-        store.applySnapshot(result.rows, result.generation);
+        const byId = new Map(pages.flatMap((page) => page.rows).map((row) => [row.id, row]));
+        // The bare list is first, and its generation is the one §8.2 answers the shelf with.
+        store.applySnapshot([...byId.values()], pages[0]?.generation ?? 0);
       },
       () => {
-        // Uncomputed, not empty. See `snapshot` above.
+        // Uncomputed, not empty — and one refused read of the eight is a partial library, which
+        // is no better. See `snapshot` above.
       },
     );
   }, [request, store]);
@@ -205,7 +212,9 @@ export function useLibrary(deps: AppDeps): LibraryState {
     const rows = snapshot?.rows ?? null;
     return {
       rows,
-      presence: rows === null ? 'uncomputed' : rows.length === 0 ? 'empty' : 'present',
+      // The store holds hidden and excluded rows too (GA39); a library of only those is the
+      // empty shelf the bare list answered, not a present one.
+      presence: rows === null ? 'uncomputed' : rows.some(isOnShelf) ? 'present' : 'empty',
       generation: snapshot?.generation ?? store.generation,
       store,
       reload,

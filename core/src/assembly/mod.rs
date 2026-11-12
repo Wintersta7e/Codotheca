@@ -159,6 +159,21 @@ impl std::fmt::Debug for CoreHandler {
     }
 }
 
+/// GA39: `projects.list` queries whose answers together hold every row. The bare list drops a
+/// hidden, reference or excluded row unless the query names that flag, and flag terms
+/// AND-combine, so one read per subset of the three flags is needed — the renderer's
+/// `useLibrary` reload makes the same eight reads.
+const PROJECTS_SNAPSHOT_READS: [Option<&str>; 8] = [
+    None,
+    Some("is:hidden"),
+    Some("is:reference"),
+    Some("is:excluded"),
+    Some("is:hidden is:reference"),
+    Some("is:hidden is:excluded"),
+    Some("is:reference is:excluded"),
+    Some("is:hidden is:reference is:excluded"),
+];
+
 impl CoreHandler {
     /// Takes ownership of the deps, with an empty install queue and no Device Flow running.
     #[must_use]
@@ -853,12 +868,22 @@ impl CoreHandler {
             // [p4] §43.15's `motivation/snapshot` is the read's own answer, so a subscriber that
             // missed every delta renders exactly what `motivation.get` would have said.
             Topic::Motivation => self.handle("motivation.get", serde_json::json!({})).ok(),
+            // GA39: the shell replaces its whole store with this, and its evaluator applies
+            // §8.0b's base predicate itself, so the snapshot carries every row — the bare list
+            // plus the flagged reads `in_base_set` would drop. Each read answers the rows whose
+            // flags are exactly the ones it names, so the eight partition the library; all run
+            // under this one `&mut self`, so nothing writes between them.
             Topic::Projects => {
-                let page = self.handle("projects.list", serde_json::json!({})).ok()?;
-                Some(serde_json::json!({
-                    "generation": page.get("generation")?,
-                    "rows": page.get("rows")?,
-                }))
+                let mut generation = None;
+                let mut rows = Vec::new();
+                for query in PROJECTS_SNAPSHOT_READS {
+                    let page = self
+                        .handle("projects.list", serde_json::json!({ "query": query }))
+                        .ok()?;
+                    generation.get_or_insert(page.get("generation")?.clone());
+                    rows.extend(page.get("rows")?.as_array()?.iter().cloned());
+                }
+                Some(serde_json::json!({ "generation": generation?, "rows": rows }))
             }
             Topic::Core => {
                 let scan = self.handle("scan.status", serde_json::json!({})).ok()?;
