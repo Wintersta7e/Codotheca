@@ -274,6 +274,8 @@ fn resolve_pointer(dir: &Path, pointer: &Path, translate: bool) -> (PathBuf, boo
 
 /// Whether this host translates a WSL-spelled pointer: Windows does, and — under `testkit`,
 /// once a test has asked ([`translate_wsl_pointers_for_tests`]) — so does any host.
+// cfg twin: without `testkit` the body is `const`-able, with it the atomic load is not.
+#[allow(clippy::missing_const_for_fn)]
 fn translates_here() -> bool {
     #[cfg(feature = "testkit")]
     if TESTKIT_TRANSLATES.load(std::sync::atomic::Ordering::Relaxed) {
