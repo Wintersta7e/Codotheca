@@ -96,7 +96,10 @@ export function QuickSwitchHost(props: QuickSwitchHostProps): ReactElement | nul
     wasOpen.current = false;
     const target = restoreTo.current;
     restoreTo.current = null;
-    if (target?.isConnected) target.focus();
+    // The panel is an overlay, so nothing behind it moved and the restore has nothing to reveal.
+    // A project page opened from it keeps its root mounted and has just reset the document to its
+    // top; a scrolling focus would carry that root back down.
+    if (target?.isConnected) target.focus({ preventScroll: true });
   }, [state.open]);
 
   const handle = useCallback(

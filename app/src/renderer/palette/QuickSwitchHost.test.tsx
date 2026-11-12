@@ -186,6 +186,24 @@ describe('QuickSwitchHost', () => {
     field.remove();
   });
 
+  // A page opened from the palette is often the very element that held focus: the page view stays
+  // mounted with the next project, which has just reset the document to its top. A plain `focus()`
+  // scrolls a root taller than the window back down (`e2e/page-scroll.spec.ts` measured 301-342px).
+  it('restores focus without scrolling, so a page opened from it stays at its top', () => {
+    const { props } = host();
+    const page = document.createElement('div');
+    page.tabIndex = -1;
+    document.body.append(page);
+    page.focus();
+    const focus = vi.spyOn(page, 'focus');
+    altSpace(page);
+    fireEvent.keyDown(window, { code: 'Enter', shiftKey: true });
+    expect(props.onOpenPage).toHaveBeenCalledWith(1 as ProjectId);
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    expect(document.activeElement).toBe(page);
+    page.remove();
+  });
+
   it('opens empty every time, carrying nothing over', () => {
     host();
     altSpace();
