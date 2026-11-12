@@ -267,13 +267,14 @@ test('AC-P4-48-12 AC-P4-50-8 the corrupt-index chain restores every registered s
   // until the project's first completion write applies it, in the same transaction
   // (§48.8.4), and a card shows before that write. The core holds the index exclusively, so the
   // wait reads the completion through the card: its "not computed" rank leaves once it is written.
+  // A computed rank keeps the band and names its letter in `data-rank`; the uncomputed one has none.
   await expect
     .poll(
       async () => {
         const uncomputed: string[] = [];
         for (const name of planted.shelf) {
           const card = window.locator('.cdt-card', { hasText: name });
-          if ((await card.locator('.cdt-rank').count()) > 0) uncomputed.push(name);
+          if ((await card.locator('.cdt-rank:not([data-rank])').count()) > 0) uncomputed.push(name);
         }
         return uncomputed;
       },
