@@ -4,14 +4,20 @@ import {
   type GridFocus,
   type GridState,
   NO_FOCUS,
+  columnIn,
   focusIndex,
   initialFocus,
   mountedIndices,
-  moveFocus,
+  moveAcrossSections,
   tabIndexFor,
+  type GridDirection,
 } from './gridNavigation';
 
 const id = (n: number): ProjectId => n as unknown as ProjectId;
+
+/** One section's grid: every case below predates sections and holds with nothing to cross into. */
+const moveFocus = (state: GridState, focus: GridFocus, direction: GridDirection): GridFocus =>
+  moveAcrossSections({ sections: [state.order], columns: state.columns }, focus, direction);
 const ids = (n: number): ProjectId[] => Array.from({ length: n }, (_, i) => id(i + 1));
 
 // Seven cards over four columns: a full row, a full row, then a short last row of three.
@@ -94,6 +100,71 @@ describe('vertical movement carries a desired column', () => {
   it('does nothing at all with no focus or an empty grid', () => {
     expect(moveFocus(grid, NO_FOCUS, 'down')).toEqual(NO_FOCUS);
     expect(moveFocus({ order: [], columns: 4 }, at(1), 'down')).toEqual(NO_FOCUS);
+  });
+});
+
+// The shape exec-dfui-1 measured the defect on: three columns, A = 1–4, B = 5–7 collapsed, so
+// absent from the walk, C = 8–10. Each section starts its own visual row.
+describe('vertical movement crosses sections and never enters a collapsed one (§11.7)', () => {
+  const shelf = { sections: [[1, 2, 3, 4].map(id), [8, 9, 10].map(id)], columns: 3 };
+  const move = (focus: GridFocus, direction: GridDirection): GridFocus =>
+    moveAcrossSections(shelf, focus, direction);
+  const atCol = (n: number, desiredColumn: number): GridFocus => ({
+    projectId: id(n),
+    desiredColumn,
+  });
+
+  it('goes from a section’s last row to the next section’s first row at the desired column', () => {
+    // 4 is A's second row, column 0: down lands on C's first card, not on collapsed 7.
+    expect(move(atCol(4, 0), 'down')).toEqual(atCol(8, 0));
+    // 3 is A's first row, column 2; A's second row is short, so 3 → 4 clamps and keeps column 2…
+    const clamped = move(atCol(3, 2), 'down');
+    expect(clamped).toEqual(atCol(4, 2));
+    // …and the column survives the crossing into C, instead of landing in collapsed 6.
+    expect(move(clamped, 'down')).toEqual(atCol(10, 2));
+  });
+
+  it('goes from a section’s first row to the previous section’s last row, clamped', () => {
+    // C's first row, column 2 → A's last row holds only card 4.
+    const up = move(atCol(10, 2), 'up');
+    expect(up).toEqual(atCol(4, 2));
+    // The desired column carried through comes back out on the way up again.
+    expect(move(up, 'up')).toEqual(atCol(3, 2));
+    expect(move(atCol(8, 0), 'up')).toEqual(atCol(4, 0));
+  });
+
+  it('keeps left and right inside the section, clamped at row ends', () => {
+    expect(move(atCol(4, 0), 'right')).toEqual(atCol(4, 0));
+    expect(move(atCol(8, 0), 'left')).toEqual(atCol(8, 0));
+    expect(move(atCol(3, 2), 'right')).toEqual(atCol(3, 2));
+    expect(move(atCol(9, 1), 'left')).toEqual(atCol(8, 0));
+  });
+
+  it('stops at the first and the last open section', () => {
+    expect(move(atCol(2, 1), 'up')).toEqual(atCol(2, 1));
+    expect(move(atCol(9, 1), 'down')).toEqual(atCol(9, 1));
+  });
+
+  it('skips an empty section and has no move for a card outside every open section', () => {
+    const gapped = { sections: [[id(1)], [], [id(2)]], columns: 3 };
+    expect(moveAcrossSections(gapped, atCol(1, 0), 'down')).toEqual(atCol(2, 0));
+    expect(move(atCol(6, 0), 'down')).toEqual(NO_FOCUS);
+  });
+
+  it('reads a card’s column from its own section, for a selection no arrow made', () => {
+    expect(columnIn(shelf, id(3))).toBe(2);
+    expect(columnIn(shelf, id(4))).toBe(0);
+    expect(columnIn(shelf, id(10))).toBe(2);
+    expect(columnIn(shelf, id(6))).toBe(0);
+    expect(columnIn(shelf, null)).toBe(0);
+  });
+
+  it('walks a one-column list by row across sections', () => {
+    const list = { sections: shelf.sections, columns: 1 };
+    expect(moveAcrossSections(list, atCol(4, 0), 'down')).toEqual(atCol(8, 0));
+    expect(moveAcrossSections(list, atCol(8, 0), 'up')).toEqual(atCol(4, 0));
+    expect(moveAcrossSections(list, atCol(8, 0), 'right')).toEqual(atCol(8, 0));
+    expect(moveAcrossSections(list, atCol(8, 0), 'left')).toEqual(atCol(8, 0));
   });
 });
 

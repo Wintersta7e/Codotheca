@@ -19,13 +19,15 @@ import type {
 import { parseQuery } from '../../shared/query/parse.js';
 import type { KeyAction } from '../keyboard/contexts.js';
 import {
+  columnIn,
   focusIndex,
   mountedIndices,
-  moveFocus,
+  moveAcrossSections,
   NO_FOCUS,
   type GridDirection,
   type GridFocus,
   type GridState,
+  type SectionedGrid,
 } from '../keyboard/gridNavigation.js';
 import { flickerEligible, useFlicker } from '../motion/flicker.js';
 import { allowsScheduledFrames, type ResolvedTier } from '../motion/tier.js';
@@ -156,7 +158,12 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
     onOpenProject,
   } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
-  const desiredColumn = useRef(0);
+  // The column an arrow move asked for, and the selection it produced. A selection made any other
+  // way — a click, Tab, a restored view — has no request behind it, so its own column stands in.
+  const desiredColumn = useRef<{ readonly projectId: ProjectId | null; readonly column: number }>({
+    projectId: null,
+    column: 0,
+  });
   const [now, setNow] = useState(() => deps.now());
   const [peekOpen, setPeekOpen] = useState(false);
   const [peekAnswer, setPeekAnswer] = useState<PeekAnswer | null>(null);
@@ -236,7 +243,7 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
   });
   const focus: GridFocus = {
     projectId: view.selectedProjectId,
-    desiredColumn: desiredColumn.current,
+    desiredColumn: desiredColumn.current.column,
   };
   const gridState = useMemo<GridState>(
     () => ({
@@ -248,6 +255,17 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
   const collapsedSectionIds = useMemo(
     () => new Set(virtual.extents.filter((extent) => extent.collapsed).map((extent) => extent.id)),
     [virtual.extents],
+  );
+  // §11.7's walk: open sections only, each starting its own row. The list is the same walk with
+  // one column, so `↑`/`↓` step by row across eras and `←`/`→` have nowhere to go.
+  const navGrid = useMemo<SectionedGrid>(
+    () => ({
+      sections: page.sections
+        .filter((section) => !collapsedSectionIds.has(section.id))
+        .map((section) => section.rows.map((row) => row.id)),
+      columns: view.viewMode === 'list' ? 1 : virtual.metrics.columns,
+    }),
+    [collapsedSectionIds, page.sections, view.viewMode, virtual.metrics.columns],
   );
   // §11.7's roving cell: the selection while it is on the grid; with none — or one hidden in a
   // collapsed section — the first visible card, so `Tab` and the first arrow have a card to land on.
@@ -268,6 +286,19 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
     focusPending.current = false;
     focusRovingCard();
   }, [focusRovingCard, view.selectedProjectId]);
+  // The list's entry is the first row on screen. The virtualizer's geometry is the grid's, so the
+  // list is read where it is drawn; its rows render in exactly the walk's order, so the n-th row
+  // is the walk's n-th id, and any disagreement falls back to the first open row.
+  const firstListRow = useCallback((): ProjectId | null => {
+    const order = navGrid.sections.flat();
+    const scroller = scrollRef.current;
+    if (scroller === null) return order[0] ?? null;
+    const drawn = [...scroller.querySelectorAll('.cdt-shelf-section .cdt-list-row')];
+    if (drawn.length !== order.length) return order[0] ?? null;
+    const top = scroller.getBoundingClientRect().top;
+    const onScreen = drawn.findIndex((row) => row.getBoundingClientRect().bottom > top);
+    return order[Math.max(0, onScreen)] ?? null;
+  }, [navGrid]);
   const selectCard = useCallback(
     (projectId: ProjectId): void => {
       if (projectId !== view.selectedProjectId) {
@@ -325,18 +356,21 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
     (action: KeyAction): void => {
       const direction = directionFor(action);
       if (direction !== null) {
-        // With no selection on the grid the first arrow starts one rather than moving it.
+        // With no selection shown the first arrow starts one rather than moving it.
         const next = selectionShown
-          ? moveFocus(
-              gridState,
+          ? moveAcrossSections(
+              navGrid,
               {
                 projectId: view.selectedProjectId,
-                desiredColumn: desiredColumn.current,
+                desiredColumn:
+                  desiredColumn.current.projectId === view.selectedProjectId
+                    ? desiredColumn.current.column
+                    : columnIn(navGrid, view.selectedProjectId),
               },
               direction,
             )
-          : { projectId: entryId, desiredColumn: 0 };
-        desiredColumn.current = next.desiredColumn;
+          : { projectId: view.viewMode === 'list' ? firstListRow() : entryId, desiredColumn: 0 };
+        desiredColumn.current = { projectId: next.projectId, column: next.desiredColumn };
         if (next.projectId !== view.selectedProjectId) {
           focusPending.current = true;
           onViewChange({ ...view, selectedProjectId: next.projectId });
@@ -368,8 +402,9 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
     },
     [
       entryId,
+      firstListRow,
       focusRovingCard,
-      gridState,
+      navGrid,
       onOpenProject,
       onViewChange,
       peekOpen,

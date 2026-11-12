@@ -3,6 +3,7 @@ import { type ReactElement, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectId } from '../../generated/protocol.js';
 import { required } from '../../shared/required.js';
+import { toggled } from '../shelf/collapse.js';
 import type { QueryContext } from '../shelf/evaluate.js';
 import { firstVisibleIndex, sectionExtents } from '../shelf/measure.js';
 import { buildShelfPage } from '../shelf/page.js';
@@ -68,13 +69,16 @@ function rowTop(index: number): number {
   return required(rowTopOf(extents, METRICS, index), 'a laid-out row');
 }
 
-function Harness(props: { readonly initial: ShelfView }): ReactElement {
+function Harness(props: {
+  readonly initial: ShelfView;
+  readonly rows?: readonly ShelfRow[];
+}): ReactElement {
   const [view, setView] = useState(props.initial);
   const fake = fakeAppDeps({}, { effectsTier: 'off' });
   fake.setNow(NOW);
   const screen: ShelfScreenProps = {
     deps: fake.deps,
-    rows: ROWS,
+    rows: props.rows ?? ROWS,
     library: 'present',
     problems: null,
     generation: 7,
@@ -97,8 +101,13 @@ function Harness(props: { readonly initial: ShelfView }): ReactElement {
   return <ShelfScreen {...screen} />;
 }
 
-function mount(initial: ShelfView = DEFAULT_SHELF_VIEW): HTMLElement {
-  const { container } = render(<Harness initial={initial} />, { wrapper: withProjectDeps() });
+function mount(
+  initial: ShelfView = DEFAULT_SHELF_VIEW,
+  rows: readonly ShelfRow[] = ROWS,
+): HTMLElement {
+  const { container } = render(<Harness initial={initial} rows={rows} />, {
+    wrapper: withProjectDeps(),
+  });
   return container;
 }
 
@@ -197,5 +206,117 @@ describe('starting a selection on a fresh shelf (§11.7)', () => {
     expect(top + METRICS.rowHeight).toBeGreaterThan(VIEWPORT);
     expect(scroller.scrollTop).toBe(top + METRICS.rowHeight - VIEWPORT);
     expect(container.querySelector('.cdt-shelf-peek-slot')).not.toBeNull();
+  });
+});
+
+// exec-dfui-1's probe: three columns, section A = cards 1–4 (live), B = 5–7 (this month) and
+// collapsed, C = 8–10 (this quarter). Within a section the newest card comes first.
+const SECTIONED: readonly ShelfRow[] = Array.from({ length: 10 }, (_, index) => {
+  const n = index + 1;
+  const ageDays = n <= 4 ? 1 : n <= 7 ? 14 : 45;
+  return {
+    ...toShelfRow(
+      makeProjectRow({
+        id: n as ProjectId,
+        name: `card-${String(n).padStart(2, '0')}`,
+        lastTouchedAt: NOW - ageDays * DAY - n * 60,
+      }),
+    ),
+    authoredByUser: true,
+  };
+});
+const B_COLLAPSED: ShelfView = {
+  ...DEFAULT_SHELF_VIEW,
+  collapsed: toggled(DEFAULT_SHELF_VIEW.collapsed, 'era:month', true),
+};
+const nameOf = (n: number): string => `card-${String(n).padStart(2, '0')}`;
+
+function press(key: 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight'): void {
+  // The event goes where the browser would send it: the focused element, else the body (R45).
+  const target = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  fireEvent.keyDown(required(target, 'a focused element or the body'), { key, code: key });
+}
+
+describe('arrows walk open sections, each starting its own row (§11.7)', () => {
+  it('mounts A and C and not the collapsed B, so the walk is measured on the probe shape', () => {
+    const container = mount(B_COLLAPSED, SECTIONED);
+    const names = cards(container).map((element) =>
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].find((n) => element.textContent.includes(nameOf(n))),
+    );
+    expect(names).toEqual([1, 2, 3, 4, 8, 9, 10]);
+  });
+
+  it('moves down out of A into C at the desired column, never into collapsed B', () => {
+    const container = mount({ ...B_COLLAPSED, selectedProjectId: 4 as ProjectId }, SECTIONED);
+    press('ArrowDown');
+    expect(card(container, nameOf(8)).getAttribute('data-focused')).toBe('true');
+    expect(document.activeElement).toBe(card(container, nameOf(8)));
+  });
+
+  it('carries the desired column through a short row and across the section boundary', () => {
+    // Column 2 from card 3: A's short second row clamps to 4, then C's first row at column 2.
+    const container = mount({ ...B_COLLAPSED, selectedProjectId: 3 as ProjectId }, SECTIONED);
+    const focusedAfter = (key: Parameters<typeof press>[0]): string | undefined => {
+      press(key);
+      return [1, 2, 3, 4, 8, 9, 10]
+        .map(nameOf)
+        .find((name) => card(container, name).getAttribute('data-focused') === 'true');
+    };
+    expect(focusedAfter('ArrowDown')).toBe(nameOf(4));
+    expect(focusedAfter('ArrowDown')).toBe(nameOf(10));
+    expect(focusedAfter('ArrowUp')).toBe(nameOf(4));
+    expect(focusedAfter('ArrowUp')).toBe(nameOf(3));
+  });
+
+  it('clamps left and right at the section’s row ends', () => {
+    const container = mount({ ...B_COLLAPSED, selectedProjectId: 8 as ProjectId }, SECTIONED);
+    press('ArrowLeft');
+    expect(card(container, nameOf(8)).getAttribute('data-focused')).toBe('true');
+    press('ArrowUp');
+    press('ArrowRight');
+    expect(card(container, nameOf(4)).getAttribute('data-focused')).toBe('true');
+  });
+});
+
+describe('the list walks the same open sections by row', () => {
+  const LIST: ShelfView = { ...B_COLLAPSED, viewMode: 'list' };
+
+  function listRow(container: HTMLElement, n: number): HTMLElement {
+    return required(
+      [...container.querySelectorAll<HTMLElement>('.cdt-list-row')].find(
+        (row) => row.querySelector('.cdt-list-c3')?.textContent === nameOf(n),
+      ),
+      `the list row for ${nameOf(n)}`,
+    );
+  }
+
+  function selectedRows(container: HTMLElement): readonly (string | null)[] {
+    return [...container.querySelectorAll('.cdt-list-row[aria-selected="true"]')].map(
+      (row) => row.querySelector('.cdt-list-c3')?.textContent ?? null,
+    );
+  }
+
+  it('starts on the first row on screen, then steps by row across eras and skips collapsed B', () => {
+    const container = mount(LIST, SECTIONED);
+    // Scrolled so rows 1 and 2 sit wholly above the scroller's top edge: the entry is row 3.
+    for (const n of [1, 2, 3, 4, 8, 9, 10]) {
+      const bottom = n <= 2 ? -4 : 40 * n;
+      vi.spyOn(listRow(container, n), 'getBoundingClientRect').mockReturnValue(
+        DOMRect.fromRect({ x: 0, y: bottom - 30, width: 600, height: 30 }),
+      );
+    }
+    expect(selectedRows(container)).toEqual([]);
+
+    press('ArrowDown');
+    expect(selectedRows(container)).toEqual([nameOf(3)]);
+    press('ArrowDown');
+    expect(selectedRows(container)).toEqual([nameOf(4)]);
+    press('ArrowDown');
+    expect(selectedRows(container)).toEqual([nameOf(8)]);
+    press('ArrowRight');
+    press('ArrowLeft');
+    expect(selectedRows(container)).toEqual([nameOf(8)]);
+    press('ArrowUp');
+    expect(selectedRows(container)).toEqual([nameOf(4)]);
   });
 });
