@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectDetail, ProjectId, UninstallVerdict } from '../../generated/protocol';
 import { ProjectPageDepsContext, type ProjectPageDeps } from './deps';
@@ -233,6 +234,51 @@ describe('pinning from the hero', () => {
     });
     const call = request.mock.calls.find((c) => c[0] === 'projects.setFlags');
     expect(call?.[1]).toEqual({ id: 7, isPinned: false, isArchived: null, isHidden: null });
+  });
+});
+
+// The page has no scroller of its own: it scrolls the document, which `e2e/page-scroll.spec.ts`
+// measures in a real layout. Opening a second project keeps this view mounted with a new id, so
+// the scroll the last project was left at is where the next one would start.
+describe('opening at the top', () => {
+  afterEach(() => {
+    document.documentElement.scrollTop = 0;
+  });
+
+  const page = (id: number, deps: ProjectPageDeps): ReactElement => (
+    <ProjectPageDepsContext.Provider value={deps}>
+      <ProjectPageView
+        projectId={id as unknown as ProjectId}
+        onBack={vi.fn()}
+        onOpenProject={vi.fn()}
+      />
+    </ProjectPageDepsContext.Provider>
+  );
+
+  it('opens a page at its top when the document was left scrolled', async () => {
+    document.documentElement.scrollTop = 115;
+    render(page(7, depsFor(detailFixture())));
+    await screen.findByTestId('cp-tabpanel');
+    expect(document.documentElement.scrollTop).toBe(0);
+  });
+
+  it('opens the next project at its top, whatever the last one was scrolled to', async () => {
+    const deps = depsFor(detailFixture());
+    const { rerender } = render(page(7, deps));
+    await screen.findByTestId('cp-tabpanel');
+    document.documentElement.scrollTop = 482;
+    rerender(page(8, deps));
+    await screen.findByTestId('cp-tabpanel');
+    expect(document.documentElement.scrollTop).toBe(0);
+  });
+
+  it('leaves the scroll alone while the same project stays open', async () => {
+    const deps = depsFor(detailFixture());
+    const { rerender } = render(page(7, deps));
+    await screen.findByTestId('cp-tabpanel');
+    document.documentElement.scrollTop = 300;
+    rerender(page(7, deps));
+    expect(document.documentElement.scrollTop).toBe(300);
   });
 });
 

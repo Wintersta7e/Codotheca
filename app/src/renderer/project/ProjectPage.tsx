@@ -9,6 +9,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -161,6 +162,13 @@ export function ProjectPageView({
   useEffect(() => {
     setShownId(null);
     setPinnedOverride(null);
+  }, [projectId]);
+
+  // The page has no scroller of its own — it scrolls the document — and opening a second project
+  // keeps this view mounted, so without this it would start where the last one was left. Before
+  // paint, so no frame shows the new project part-scrolled.
+  useLayoutEffect(() => {
+    document.documentElement.scrollTop = 0;
   }, [projectId]);
 
   // §11.3a's switch defaults **on**, so a settings read that has not landed yet must not silence
