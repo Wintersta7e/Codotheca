@@ -1,11 +1,12 @@
 /**
- * §43's copy module: every string the motivation layer renders, each export one ‹COPY› slot. Two
- * constraints are checkable without the user's words — §39.10a's *rhythm, never streak* in every
- * rendered string, and §43.2's condensed block note of at most two words and never a count.
+ * §43's copy module: every string the motivation layer renders. Its constraints are pinned by
+ * shape — §39.10a's *rhythm, never streak* in every rendered string, §43.2's condensed block note
+ * of at most two words and never a count, the figure order each formatter keeps, and §43.4's rise
+ * line naming one transition's term from its receipt — and no string ships a placeholder.
  */
 import { describe, expect, it } from 'vitest';
 
-import type { MotivationReason } from '../../generated/protocol';
+import type { MotivationReason, XpTerm } from '../../generated/protocol';
 import { QUIET_LIST } from '../../shared/motivationQuiet';
 import * as copy from './copy';
 
@@ -38,6 +39,7 @@ function rendered(): [string, string][] {
   out.push(['LINE_RISE one', copy.LINE_RISE(7, reason())]);
   out.push(['LINE_RISE several', copy.LINE_RISE(7, reason({ transitions: 4 }))]);
   out.push(['LINE_RISE none', copy.LINE_RISE(7, null)]);
+  out.push(['LINE_COVERAGE_PARTIAL', copy.LINE_COVERAGE_PARTIAL(3)]);
   return out;
 }
 
@@ -48,6 +50,13 @@ describe('the motivation copy module', () => {
     for (const [name, text] of strings) {
       expect(text.length, `${name} is empty`).toBeGreaterThan(0);
       expect(text.toLowerCase(), name).not.toContain('streak');
+    }
+  });
+
+  it('ships words in every string, never a placeholder', () => {
+    for (const [name, text] of rendered()) {
+      expect(text, name).not.toContain('‹');
+      expect(text, name).not.toContain('COPY');
     }
   });
 
@@ -76,6 +85,39 @@ describe('the motivation copy module', () => {
     const several = copy.LINE_RISE(7, reason({ transitions: 4 }));
     expect(several).toContain('4');
     expect(several).not.toContain('alpha');
+    expect(several).toBe('LEVEL 7 · FROM 4 NEW ENTRIES');
+    expect(copy.LINE_RISE(7, null)).toBe('LEVEL 7');
+  });
+
+  it('names one transition by its term, then its project and its date, nulls dropped', () => {
+    expect(copy.LINE_RISE(25, reason({ term: 'release', on: '2026-11-10' }))).toBe(
+      'LEVEL 25 · RELEASE TAGGED · alpha · 2026-11-10',
+    );
+    const terms = Object.keys(copy.RISE_TERM_WORDS) as XpTerm[];
+    expect(terms).toHaveLength(9);
+    for (const term of terms) {
+      const words = copy.RISE_TERM_WORDS[term];
+      expect(words.length, term).toBeGreaterThan(0);
+      expect(copy.LINE_RISE(7, reason({ term })), term).toBe(
+        `LEVEL 7 · ${words} · alpha · 2026-03-04`,
+      );
+    }
+    expect(copy.LINE_RISE(7, reason({ term: 'commitDay', projectName: null }))).toBe(
+      'LEVEL 7 · COMMIT-DAY · 2026-03-04',
+    );
+    expect(copy.LINE_RISE(7, reason({ projectName: null, on: null }))).toBe('LEVEL 7');
+  });
+
+  it('counts a single project and a single week in the singular, every other count plural', () => {
+    expect(copy.XP_LINE_PARTIAL(120, 1)).toBe(
+      '120 XP TO NEXT LEVEL · 1 PROJECT STILL INDEXING · CAN ONLY GROW',
+    );
+    expect(copy.XP_LINE_PARTIAL(120, 3)).toContain('3 PROJECTS STILL INDEXING');
+    expect(copy.XP_LINE_PARTIAL(120, 3)).toContain(copy.XP_LINE_COMPUTED(120));
+    expect(copy.LINE_COVERAGE_PARTIAL(1)).toBe('1 PROJECT STILL INDEXING');
+    expect(copy.RHYTHM_LINE(3, 4, 1)).toBe('3 OF 4 DAYS · BEST 1 WEEK');
+    expect(copy.RHYTHM_LINE(3, 4, 6)).toBe('3 OF 4 DAYS · BEST 6 WEEKS');
+    expect(copy.RHYTHM_LINE(null, null, null)).toBe('— OF — DAYS · BEST — WEEKS');
   });
 
   it('makes the quiet note the list read from its module', () => {

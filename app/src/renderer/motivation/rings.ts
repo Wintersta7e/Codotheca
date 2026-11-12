@@ -13,6 +13,7 @@ import {
   RING_LABELS,
   RING_NOT_APPLICABLE,
   RING_STATUS_WORDS,
+  SHIP_OPEN_SUB,
   TEND_NOTHING_TO_TEND,
   UNKNOWN,
 } from './copy';
@@ -60,14 +61,18 @@ function glyph(key: RingKey, status: RingStatus, measure: Measure): RingGlyph {
     [label, RING_STATUS_WORDS[status], ...parts].filter((part) => part !== null).join(', ');
   const base = { key, label, status, closed: false, unknown: false, sub: null };
   switch (status) {
-    case 'open':
+    case 'open': {
+      // Ship's open week says what is recorded, in the sub-line and the accessible name alike.
+      const sub = key === 'ship' ? SHIP_OPEN_SUB : null;
       return {
         ...base,
         fill: 'arc',
         fraction: measure.fraction,
         centre: measure.figure,
-        name: named(measure.figure),
+        sub,
+        name: named(measure.figure, sub),
       };
+    }
     case 'closed':
       return {
         ...base,

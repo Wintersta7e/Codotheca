@@ -6,12 +6,18 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createRef, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, test, vi } from 'vitest';
-import type { MotivationState, ProjectId, ProjectRow, SessionRef } from '../../generated/protocol';
+import type {
+  MotivationState,
+  ProjectId,
+  ProjectRow,
+  RingStatus,
+  SessionRef,
+} from '../../generated/protocol';
 import { DATA_MOTIVATION } from '../../shared/motivationQuiet';
 import type { AppDeps } from '../app/deps';
 import { BENCH_LABEL } from '../card/useBenchElapsed';
 import bandCss from './band.css?raw';
-import { LEVEL_LABEL, RHYTHM_LABEL, UNKNOWN } from './copy';
+import { LEVEL_LABEL, RHYTHM_LABEL, RING_LABELS, SHIP_OPEN_SUB, UNKNOWN } from './copy';
 import { bandRenders, benchSession, StatusBand, type StatusBandProps } from './StatusBand';
 
 /** jsdom has no IntersectionObserver: each instance records its target and fires on demand. */
@@ -277,6 +283,47 @@ describe('the status band', () => {
     expect(rule?.[1]).toMatch(/var\(--unknown\)/u);
   });
 
+  it('says no push is recorded under an open Ship ring, and under no other state', () => {
+    const statuses: RingStatus[] = [
+      'open',
+      'closed',
+      'nothingToTend',
+      'notApplicable',
+      'notComputed',
+    ];
+    for (const status of statuses) {
+      const base = state();
+      const rings = base.rings;
+      if (rings === null) throw new Error('the fixture has no rings');
+      const { container } = draw({
+        state: {
+          ...base,
+          rings: { ...rings, ship: { status, pushedOn: null, observable: 1, unobservable: 0 } },
+        },
+      });
+      const ship = [...container.querySelectorAll('[role="img"]')].find((element) =>
+        element.getAttribute('aria-label')?.startsWith(`${RING_LABELS.ship},`),
+      );
+      expect(ship, status).toBeDefined();
+      const sub = ship?.querySelector('.cdt-band-ring-sub')?.textContent ?? null;
+      const named = ship?.getAttribute('aria-label') ?? '';
+      // The fixture's Focus ring is open too: the sub-line is Ship's alone.
+      const everywhere = [...container.querySelectorAll('.cdt-band-ring-sub')].filter(
+        (element) => element.textContent === SHIP_OPEN_SUB,
+      );
+      if (status === 'open') {
+        expect(sub, status).toBe(SHIP_OPEN_SUB);
+        expect(named, status).toContain(SHIP_OPEN_SUB);
+        expect(everywhere, status).toHaveLength(1);
+      } else {
+        expect(sub, status).not.toBe(SHIP_OPEN_SUB);
+        expect(named, status).not.toContain(SHIP_OPEN_SUB);
+        expect(everywhere, status).toHaveLength(0);
+      }
+      cleanup();
+    }
+  });
+
   it('flips the number on the next key press after a rise, and announces nothing new', () => {
     // Levels no other test paints: the flip compares with the last level this renderer painted.
     const at = (
@@ -337,7 +384,10 @@ describe('the status band', () => {
     expect(container.querySelector(".cdt-xp-fill[data-flip='flash']")).not.toBeNull();
     // What a screen reader is given is unchanged by it: the button's name is the level now, no
     // live region or alert exists, and focus has not moved.
-    expect(screen.getByRole('button', { name: `${LEVEL_LABEL} 41` })).toBeTruthy();
+    // A rise with no reason is the level alone, so the waiting line reads the same words: of the
+    // buttons with that name, exactly one is the number.
+    const named = screen.getAllByRole('button', { name: `${LEVEL_LABEL} 41` });
+    expect(named.filter((b) => b.classList.contains('cdt-band-level-number'))).toHaveLength(1);
     expect(container.querySelector('[aria-live], [role="alert"], [role="status"]')).toBeNull();
     expect(document.activeElement).toBe(focused);
 
