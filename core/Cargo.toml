@@ -1,6 +1,6 @@
 [package]
 name = "codotheca-core"
-version = "0.9.0"
+version = "0.10.0"
 edition = "2021"
 # The floor the locked graph sets: `rusqlite` declares 1.89; `ignore`, `globset` and the `icu_*`
 # crates declare 1.88.
