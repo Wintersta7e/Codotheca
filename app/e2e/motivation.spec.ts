@@ -57,6 +57,18 @@ async function bandReading(window: Page): Promise<string> {
   return `${level ?? '?'} · xp line ${xp.slice(xp.lastIndexOf('›') + 1).trim()}`;
 }
 
+/**
+ * Waits until the scan control offers a new scan. While a scan runs, the same control opens the
+ * scan summary, a drawer over the shelf, and a click then starts nothing. What the control read
+ * before the wait is printed.
+ */
+async function awaitIdleScan(window: Page, at: string): Promise<void> {
+  const control = window.locator('[data-slot="scan"]');
+  // eslint-disable-next-line no-console -- the trace is the deliverable
+  console.log(`${at}: scan control reads ${(await control.textContent()) ?? '?'} before the click`);
+  await expect(control).toHaveText(/^SCAN$/, { timeout: 120_000 });
+}
+
 /** Animations running on the level digits, by name. */
 function digitAnimations(window: Page): Promise<string[]> {
   return window.evaluate(() =>
@@ -91,6 +103,7 @@ async function riseThroughScans(window: Page, home: string, nextDay: { n: number
     }
     // A bare `click` event, not a pointer press: a rise that arrives a beat after the XP moved is
     // armed by the next scan, and a real press there is the input that fires the flip early.
+    await awaitIdleScan(window, `rise: scan ${String(scan)}`);
     await window.locator('[data-slot="scan"]').dispatchEvent('click');
     await expect
       .poll(
@@ -148,6 +161,7 @@ test.describe.serial('the band over a real ledger', () => {
     if (((await levelNumber.getAttribute('aria-label')) ?? '').includes('NOT COMPUTED')) {
       // eslint-disable-next-line no-console -- the trace is the deliverable
       console.log(`setup: first run left ${await bandReading(window)}; scanning`);
+      await awaitIdleScan(window, 'setup');
       await window.locator('[data-slot="scan"]').click();
       await expect(levelNumber).not.toHaveAttribute('aria-label', /NOT COMPUTED/, {
         timeout: 90_000,
@@ -553,6 +567,7 @@ test('AC-P4-43-13-app a new install quit while scanning relaunches to the shelf 
             `${String(await lines(window).count())} line`
           : 'no band before the scan'),
     );
+    await awaitIdleScan(window, 'AC-P4-43-13-app');
     await window.locator('[data-slot="scan"]').click();
     if (cards === 0) {
       await expect(window.locator('.cdt-card').first()).toBeVisible({ timeout: 120_000 });
