@@ -13,13 +13,19 @@ use std::sync::Arc;
 
 use codotheca_core::exclusion::gate::{Covered, ExclusionGate, GateSite};
 use codotheca_core::exclusion::list::{ExclusionList, LocationKey, PathEntry};
-use codotheca_core::exclusion::store::{apply_coverage, load_list, normalise_dialog_path};
+use codotheca_core::exclusion::store::normalise_dialog_path;
+#[cfg(unix)]
+use codotheca_core::exclusion::store::{apply_coverage, load_list};
 use codotheca_core::index::path::{native_platform, PathPlatform};
+#[cfg(unix)]
 use codotheca_core::index::rebuild::{rebuild_in_place, RebuildOutcome};
 use codotheca_core::index::Index;
 use codotheca_core::paths::{path_from_bytes, path_key};
 use codotheca_core::proto::txguard::TxGuard;
-use codotheca_core::protocol::{LocationId, LocationKind};
+#[cfg(unix)]
+use codotheca_core::protocol::LocationId;
+use codotheca_core::protocol::LocationKind;
+#[cfg(unix)]
 use rusqlite::{params, Connection};
 
 const NOW: i64 = 1_760_000_000;
@@ -290,6 +296,7 @@ fn fresh() -> (tempfile::TempDir, Index) {
     (dir, index)
 }
 
+#[cfg(unix)]
 fn project(conn: &Connection) -> i64 {
     conn.execute(
         "INSERT INTO project (name, seed_basename, created_at, updated_at)
@@ -301,6 +308,7 @@ fn project(conn: &Connection) -> i64 {
 }
 
 /// A fixture `location` row; its production writer is `identity::store::upsert_location`.
+#[cfg(unix)]
 fn seed_location(conn: &Connection, project: i64, kind: &str, distro: &str, raw: &[u8]) -> i64 {
     let platform = if kind == "win" {
         PathPlatform::Windows
@@ -326,6 +334,7 @@ fn seed_location(conn: &Connection, project: i64, kind: &str, distro: &str, raw:
 }
 
 /// A fixture `scan_root` row whose stored key is given, so GA36's case can store a wrong one.
+#[cfg(unix)]
 fn seed_root(conn: &Connection, kind: &str, distro: &str, raw: &[u8], stored_key: &[u8]) {
     conn.execute(
         "INSERT INTO scan_root
@@ -336,6 +345,7 @@ fn seed_root(conn: &Connection, kind: &str, distro: &str, raw: &[u8], stored_key
     .unwrap();
 }
 
+#[cfg(unix)]
 fn add_exclusion(conn: &Connection, kind: &str, entry: &str, raw: Option<&[u8]>, distro: &str) {
     let match_key = raw.map_or_else(
         || entry.as_bytes().to_vec(),
@@ -349,6 +359,7 @@ fn add_exclusion(conn: &Connection, kind: &str, entry: &str, raw: Option<&[u8]>,
     .unwrap();
 }
 
+#[cfg(unix)]
 fn excluded(conn: &Connection, id: i64) -> i64 {
     conn.query_row("SELECT excluded FROM location WHERE id = ?1", [id], |r| {
         r.get(0)
@@ -356,6 +367,7 @@ fn excluded(conn: &Connection, id: i64) -> i64 {
     .unwrap()
 }
 
+#[cfg(unix)]
 fn apply(index: &mut Index) -> (Vec<LocationId>, Vec<LocationId>) {
     let list = load_list(index.conn()).unwrap();
     let _guard = TxGuard::enter();

@@ -23,13 +23,18 @@ use std::time::Duration;
 
 use codotheca_core::cancel::CancelToken;
 use codotheca_core::clock::SystemClock;
+#[cfg(unix)]
 use codotheca_core::git::{
-    ensure_empty_hooks_dir, establish_ownership, translate_wsl_pointers_for_tests, GitBackend,
-    GitDirSelect, GitError, GitExec, GitResult, GitSlots, JobClass, JobContext, RepoHandle,
-    RunLimits, StatusOptions, StoreKey, SystemGit,
+    ensure_empty_hooks_dir, translate_wsl_pointers_for_tests, GitError, GitExec, RunLimits,
+};
+use codotheca_core::git::{
+    establish_ownership, GitBackend, GitDirSelect, GitResult, GitSlots, JobClass, JobContext,
+    RepoHandle, StatusOptions, StoreKey, SystemGit,
 };
 use codotheca_core::mount::StoreClass;
-use support::scan_rig::{scan, scan_with};
+use support::scan_rig::scan;
+#[cfg(unix)]
+use support::scan_rig::scan_with;
 use support::TestRepo;
 
 /// git's own switch for its ownership check: every repository reads as someone else's. Honoured
@@ -121,6 +126,7 @@ impl World {
 
     /// Rewrite the pointer as WSL spells it, for a host whose translation is the test switch's:
     /// `/mnt/q/<absolute path>`, which git here cannot follow and the core translates back.
+    #[cfg(unix)]
     fn respell_for_this_host(&self) {
         let wsl = format!("/mnt/q{}", self.pointer());
         std::fs::write(self.lane.join(".git"), format!("gitdir: {wsl}\n")).unwrap();
@@ -132,6 +138,7 @@ impl World {
 
     /// git behind a recorder whose owner can be switched: every argv is logged, and once
     /// `foreign` is called git sees every repository as someone else's.
+    #[cfg(unix)]
     fn wrapped(&self) -> Wrapped {
         let dir = self.repo.scratch().join("wrapped-git");
         std::fs::create_dir_all(&dir).unwrap();
@@ -188,12 +195,14 @@ fn established(git: &dyn GitBackend, handle: RepoHandle) -> GitResult<RepoHandle
 }
 
 /// Real git behind a recorder ([`World::wrapped`]).
+#[cfg(unix)]
 struct Wrapped {
     exec: Arc<GitExec>,
     log: PathBuf,
     flag: PathBuf,
 }
 
+#[cfg(unix)]
 impl Wrapped {
     fn exec(&self) -> GitExec {
         (*self.exec).clone()
