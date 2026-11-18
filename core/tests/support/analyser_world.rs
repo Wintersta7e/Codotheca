@@ -27,6 +27,23 @@ use super::git_world::HOSTILE_READ_PROFILE;
 /// The clock every handler call here reads.
 pub(crate) const NOW: i64 = 1_750_000_000;
 
+/// The `scan_root.kind` and `location.kind` a scan on this host writes.
+const fn host_kind() -> &'static str {
+    if cfg!(windows) {
+        "win"
+    } else {
+        "linux"
+    }
+}
+
+/// `path`'s `path_bytes` and `path_key` as a scan on this host writes them.
+fn stored(path: &Path) -> (Vec<u8>, Vec<u8>) {
+    (
+        codotheca_core::paths::path_bytes(path),
+        codotheca_core::paths::path_key(path, codotheca_core::scan::run::platform_of(host_kind())),
+    )
+}
+
 /// One scan root, its index and its seams.
 pub(crate) struct Library {
     _dir: tempfile::TempDir,
@@ -80,14 +97,12 @@ impl Library {
             let mut guard = index.lock().expect("index");
             guard
                 .with_tx(|tx| {
+                    let (bytes, key) = stored(&root);
                     tx.execute(
                         "INSERT INTO scan_root (kind, distro, path_bytes, path_key, path_display,
                                                 added_by, added_at)
-                         VALUES ('linux', '', ?1, ?1, ?2, 'user', 0)",
-                        rusqlite::params![
-                            root.to_string_lossy().as_bytes(),
-                            root.to_string_lossy()
-                        ],
+                         VALUES (?1, '', ?2, ?3, ?4, 'user', 0)",
+                        rusqlite::params![host_kind(), bytes, key, root.to_string_lossy()],
                     )?;
                     Ok(())
                 })
@@ -302,16 +317,19 @@ impl Library {
                     [&lineage],
                 )?;
                 let project = tx.last_insert_rowid();
+                let (bytes, key) = stored(path);
                 tx.execute(
                     "INSERT INTO location
                        (project_id, kind, distro, path_bytes, path_key, path_display,
                         store_key, presence, repo_kind, refstate_observed_at,
                         worktree_observed_at, common_dir_bytes)
-                     VALUES (?1, 'linux', '', ?2, ?2, ?3, 'store', 'present', 'worktree',
-                             ?4, ?4, ?5)",
+                     VALUES (?1, ?2, '', ?3, ?4, ?5, 'store', 'present', 'worktree',
+                             ?6, ?6, ?7)",
                     rusqlite::params![
                         project,
-                        path.to_string_lossy().as_bytes(),
+                        host_kind(),
+                        bytes,
+                        key,
                         path.to_string_lossy(),
                         NOW - 60,
                         common_dir.map(String::into_bytes)
