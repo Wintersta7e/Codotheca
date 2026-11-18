@@ -71,11 +71,7 @@ fn keys_round_trip_through_parse() {
     ];
     for c in cases {
         let key = c.to_key();
-        assert_eq!(
-            ProjectSubject::parse(&key),
-            Some(c.clone()),
-            "key was {key}"
-        );
+        assert_eq!(ProjectSubject::parse(&key), Some(c), "key was {key}");
     }
 }
 

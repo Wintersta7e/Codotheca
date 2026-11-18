@@ -406,7 +406,7 @@ impl SyncRunner {
                 self.drain_inbox(tx, now)?;
                 for row in load_all(tx)? {
                     if row.is_due_park(now) {
-                        let mut promoted = row.clone();
+                        let mut promoted = row;
                         promoted.state = SyncTaskState::Queued;
                         promoted.at = now;
                         // No event: a parked row that becomes runnable has not *settled*.

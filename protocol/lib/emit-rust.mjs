@@ -139,6 +139,9 @@ export function emitRust(schema) {
     "// `empty_structs_with_brackets`: an argument-less command's `Args` stays braced, because",
   );
   L.push('// serde_json reads a unit struct only from `null` and the wire sends `{}`.');
+  L.push('// `empty_enums`: serde derives a variant-less field enum for each of those braced');
+  L.push('// structs, as `deny_unknown_fields` leaves it no catch-all variant. That enum is a');
+  L.push('// sibling item of the struct, so an allow on the struct does not reach it.');
   L.push('// `match_same_arms`: the event validator keeps one arm per declared event, and a topic');
   L.push('// whose delta and snapshot carry the same state declares two events of one type.');
   // Laid out the way rustfmt lays it out: this file is checked by `cargo fmt --check` like any
@@ -147,6 +150,7 @@ export function emitRust(schema) {
     dead_code,
     missing_docs,
     clippy::empty_structs_with_brackets,
+    clippy::empty_enums,
     clippy::large_enum_variant,
     clippy::struct_excessive_bools,
     clippy::struct_field_names,
