@@ -812,6 +812,7 @@ mod bridge {
     use codotheca_core::wsl::dispatch::WslDispatcher;
     use codotheca_core::wsl::distros::{DistroInfo, DistroState};
     use codotheca_core::wsl::mounts::MountTable;
+    use codotheca_core::wsl::path::parse_bridge_path;
     use codotheca_core::wsl::proto::WorkerGit;
     use codotheca_core::wsl::serve::WorkerContext;
     use std::collections::BTreeSet;
@@ -947,14 +948,19 @@ mod bridge {
         );
     }
 
-    /// The distro's repositories are the user's repositories on this machine, so they count in
-    /// the run's found figure, and the directories its worker walked join the walked figure on
-    /// top of what the run had walked before the crossing. Driven through the real worker loop
-    /// (`LoopbackLauncher`) over a real tree; no Linux walk reaches a `\\wsl$\` bridge itself.
-    #[test]
-    fn a_crossing_adds_the_distros_walked_dirs_and_repositories_to_the_run() {
-        let r = rig();
-        let tree = tempfile::tempdir().expect("tempdir");
+    /// A real tree of 600 directories and two repositories, the bridge path naming it, and the
+    /// Linux path that bridge hands the worker, checked to resolve to the tree.
+    fn bridged_tree() -> (tempfile::TempDir, String, String) {
+        // The bridge carries a Linux path, which names no drive, and this worker runs in this
+        // process, so on Windows it resolves that path against the current drive. Under the
+        // current directory is the one place it resolves to the tree, whatever drive TEMP, the
+        // target directory or the checkout sit on. The guard removes the tree.
+        let tree = if cfg!(windows) {
+            tempfile::tempdir_in(std::env::current_dir().expect("current directory"))
+        } else {
+            tempfile::tempdir()
+        }
+        .expect("tempdir");
         // Past one 512-directory frame, so the worker reports while it walks.
         for i in 0..600 {
             std::fs::create_dir_all(tree.path().join(format!("d{i}"))).expect("mkdir");
@@ -965,9 +971,37 @@ mod bridge {
             std::fs::create_dir_all(&dot).expect("mkdir");
             std::fs::write(dot.join("HEAD"), b"ref: refs/heads/main\n").expect("HEAD");
         }
-        let linux_root = tree.path().to_str().expect("utf-8 temp path").to_owned();
-        // `parse_bridge_path` reads either separator, so the Linux path appends as it is.
-        let bridge = format!(r"\\wsl$\distro-a{linux_root}");
+        // The bridge names the tree as a distro would: by its path with no drive.
+        // `parse_bridge_path` reads either separator, so that path appends as it is.
+        let drive_less: std::path::PathBuf = tree
+            .path()
+            .components()
+            .filter(|c| !matches!(c, std::path::Component::Prefix(_)))
+            .collect();
+        let bridge = format!(
+            r"\\wsl$\distro-a{}",
+            drive_less.to_str().expect("utf-8 temp path")
+        );
+        let crossed = parse_bridge_path(&bridge).expect("a bridge path");
+        assert_eq!(crossed.distro, "distro-a", "the bridge's distro: {bridge}");
+        assert_eq!(
+            std::fs::canonicalize(&crossed.linux_path).ok(),
+            std::fs::canonicalize(tree.path()).ok(),
+            "the path the worker is handed resolves to the tree: {}",
+            crossed.linux_path
+        );
+        (tree, bridge, crossed.linux_path)
+    }
+
+    /// The distro's repositories are the user's repositories on this machine, so they count in
+    /// the run's found figure, and the directories its worker walked join the walked figure on
+    /// top of what the run had walked before the crossing. Driven through the real worker loop
+    /// (`LoopbackLauncher`) over a real tree; no Linux walk reaches a `\\wsl$\` bridge itself.
+    #[test]
+    fn a_crossing_adds_the_distros_walked_dirs_and_repositories_to_the_run() {
+        let r = rig();
+        // The reference walks exactly the path the crossing hands the worker.
+        let (_tree, bridge, linux_root) = bridged_tree();
 
         // What the worker itself reports for this tree: the figure the run must add.
         let (_, reference) = dispatcher(true);
